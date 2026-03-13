@@ -9,9 +9,14 @@ import {
   useCardInsights,
   useHealth,
   useIngestStatus,
+  useLiveContext,
   useRecommendation,
   useStats,
 } from './hooks'
+
+const DEFAULT_CHARACTER = 'IRONCLAD'
+const DEFAULT_ASCENSION = 10
+const DEFAULT_FLOOR = 1
 
 function asPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`
@@ -24,21 +29,70 @@ function parseCardsInput(value: string): string[] {
     .filter(Boolean)
 }
 
+function formatUpdatedAt(timestamp: number): string {
+  if (!timestamp) {
+    return '-'
+  }
+  return new Intl.DateTimeFormat('it-IT', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(timestamp))
+}
+
 const REASON_LABELS = {
-  low_sample: 'Campione ridotto: considera il suggerimento con cautela.',
-  no_history: 'Storico assente: suggerimento basato su fallback iniziale.',
+  low_sample_contextual: 'Campione contestuale ridotto: usa il suggerimento con cautela.',
+  ok_contextual: 'Suggerimento contestuale supportato dai dati disponibili.',
+  low_sample_global: 'Campione globale ridotto: indicazione ancora debole.',
+  ok_global: 'Suggerimento globale stabile sullo storico disponibile.',
+  no_history_global: 'Storico assente: suggerimento basato su fallback iniziale.',
+  fallback_global_no_context:
+    'Nessuno storico nel contesto richiesto: fallback automatico al globale.',
   no_candidates: 'Nessuna carta valida ricevuta in input.',
-  ok: 'Confidenza adeguata sui dati disponibili.',
 } as const
 
 export function RecommendationDashboard() {
   const [cardsInput, setCardsInput] = useState(DEFAULT_OFFERED.join(', '))
+  const [characterInput, setCharacterInput] = useState(DEFAULT_CHARACTER)
+  const [ascensionInput, setAscensionInput] = useState(DEFAULT_ASCENSION)
+  const [floorInput, setFloorInput] = useState(DEFAULT_FLOOR)
+  const [useLiveInput, setUseLiveInput] = useState(true)
   const offeredCards = useMemo(() => parseCardsInput(cardsInput), [cardsInput])
+  const manualRecommendationContext = useMemo(
+    () => ({
+      character: characterInput.trim().toUpperCase(),
+      ascension: Math.max(0, Math.floor(ascensionInput || 0)),
+      floor: Math.max(0, Math.floor(floorInput || 0)),
+    }),
+    [characterInput, ascensionInput, floorInput],
+  )
+
+  const liveContext = useLiveContext()
+  const liveCards = liveContext.data?.offered_cards ?? []
+  const liveIsUsable = Boolean(liveContext.data?.available && liveCards.length > 0)
+
+  const activeCards = useMemo(() => {
+    if (useLiveInput && liveIsUsable) {
+      return liveCards
+    }
+    return offeredCards
+  }, [liveCards, liveIsUsable, offeredCards, useLiveInput])
+
+  const activeRecommendationContext = useMemo(() => {
+    if (useLiveInput && liveIsUsable) {
+      return {
+        character: liveContext.data?.character?.trim().toUpperCase() ?? '',
+        ascension: Math.max(0, Math.floor(liveContext.data?.ascension ?? 0)),
+        floor: Math.max(0, Math.floor(liveContext.data?.floor ?? 0)),
+      }
+    }
+    return manualRecommendationContext
+  }, [liveContext.data, liveIsUsable, manualRecommendationContext, useLiveInput])
 
   const health = useHealth()
   const stats = useStats()
-  const recommendation = useRecommendation(offeredCards)
-  const cardInsights = useCardInsights(offeredCards)
+  const recommendation = useRecommendation(activeCards, activeRecommendationContext)
+  const cardInsights = useCardInsights(activeCards)
   const ingestStatus = useIngestStatus()
 
   const hasError =
@@ -49,7 +103,8 @@ export function RecommendationDashboard() {
     ingestStatus.isError
 
   const recommendationReason = recommendation.data?.reason
-  const reasonLabel = REASON_LABELS[recommendationReason ?? 'ok']
+  const reasonLabel = REASON_LABELS[recommendationReason ?? 'ok_global']
+  const liveUpdatedAt = formatUpdatedAt(liveContext.dataUpdatedAt)
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:py-12">
@@ -138,20 +193,27 @@ export function RecommendationDashboard() {
 
         <Card>
           <CardHeader>
-            <CardDescription>Ingestion live</CardDescription>
-            <CardTitle>Ultimo import</CardTitle>
+            <CardDescription>Input live</CardDescription>
+            <CardTitle>Sorgente consigli</CardTitle>
           </CardHeader>
           <CardContent>
-            {ingestStatus.isLoading ? (
+            {liveContext.isLoading || ingestStatus.isLoading ? (
               <Skeleton className="h-7 w-36" />
             ) : (
               <div className="space-y-1">
                 <p className="text-2xl font-semibold text-zinc-900">
-                  {ingestStatus.data?.updated ?? 0}
+                  {useLiveInput ? 'live' : 'manuale'}
                 </p>
                 <p className="text-muted-foreground text-sm">
-                  update, {ingestStatus.data?.imported ?? 0} nuovi,{' '}
-                  {ingestStatus.data?.parse_errors ?? 0} errori parse
+                  {liveContext.data?.available
+                    ? `run ${liveContext.data.run_id ?? '-'} • sync ${liveUpdatedAt}`
+                    : 'nessun contesto live disponibile'}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  ultimo ingest:{' '}
+                  {ingestStatus.data?.last_event_at
+                    ? new Date(ingestStatus.data.last_event_at).toLocaleString('it-IT')
+                    : '-'}
                 </p>
               </div>
             )}
@@ -165,6 +227,86 @@ export function RecommendationDashboard() {
           <CardTitle>Raccomandazione corrente</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-3 rounded-md border border-zinc-300 bg-white px-3 py-2">
+            <div>
+              <p className="text-sm font-medium text-zinc-800">Usa contesto live</p>
+              <p className="text-xs text-zinc-500">
+                Quando attivo, carte e contesto arrivano da `GET /live/context`.
+              </p>
+            </div>
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                checked={useLiveInput}
+                onChange={(event) => setUseLiveInput(event.target.checked)}
+              />
+              {useLiveInput ? 'live' : 'manuale'}
+            </label>
+          </div>
+
+          {useLiveInput && !liveIsUsable ? (
+            <Alert className="border-amber-300 bg-amber-50/80">
+              <AlertTitle>Live non disponibile</AlertTitle>
+              <AlertDescription>
+                Nessuna scelta carta trovata nel DB: usa temporaneamente l'override manuale.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-2">
+              <label
+                htmlFor="context-character"
+                className="text-xs font-semibold tracking-[0.12em] text-zinc-500 uppercase"
+              >
+                Character
+              </label>
+              <input
+                id="context-character"
+                type="text"
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                placeholder="IRONCLAD"
+                value={characterInput}
+                onChange={(event) => setCharacterInput(event.target.value)}
+                disabled={useLiveInput && liveIsUsable}
+              />
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="context-ascension"
+                className="text-xs font-semibold tracking-[0.12em] text-zinc-500 uppercase"
+              >
+                Ascension
+              </label>
+              <input
+                id="context-ascension"
+                type="number"
+                min={0}
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                value={ascensionInput}
+                onChange={(event) => setAscensionInput(Number(event.target.value || 0))}
+                disabled={useLiveInput && liveIsUsable}
+              />
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="context-floor"
+                className="text-xs font-semibold tracking-[0.12em] text-zinc-500 uppercase"
+              >
+                Floor
+              </label>
+              <input
+                id="context-floor"
+                type="number"
+                min={0}
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                value={floorInput}
+                onChange={(event) => setFloorInput(Number(event.target.value || 0))}
+                disabled={useLiveInput && liveIsUsable}
+              />
+            </div>
+          </div>
+
           <div className="space-y-2">
             <label
               htmlFor="offered-cards"
@@ -179,23 +321,24 @@ export function RecommendationDashboard() {
               placeholder="CARD.BASH, CARD.CLOTHESLINE, CARD.OFF_BALANCE"
               value={cardsInput}
               onChange={(event) => setCardsInput(event.target.value)}
+              disabled={useLiveInput && liveIsUsable}
             />
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {offeredCards.map((card) => (
+            {activeCards.map((card) => (
               <Badge key={card} className="border-zinc-300 bg-white text-zinc-700">
                 {card}
               </Badge>
             ))}
-            {offeredCards.length === 0 ? (
+            {activeCards.length === 0 ? (
               <p className="text-sm text-zinc-500">
                 Aggiungi almeno una carta per ottenere un suggerimento.
               </p>
             ) : null}
           </div>
 
-          {offeredCards.length === 0 ? (
+          {activeCards.length === 0 ? (
             <div className="rounded-lg border border-zinc-300 bg-white p-4">
               <p className="text-sm text-zinc-500">Best pick</p>
               <p className="mt-1 text-xl font-semibold text-zinc-900">N/A</p>
@@ -215,14 +358,23 @@ export function RecommendationDashboard() {
                 <Badge className="border-zinc-300 bg-zinc-100 text-zinc-800">
                   sample {recommendation.data?.sample_size ?? 0}
                 </Badge>
+                <Badge className="border-zinc-300 bg-zinc-100 text-zinc-800">
+                  scope {recommendation.data?.scope ?? 'global'}
+                </Badge>
+                {recommendation.data?.fallback_used ? (
+                  <Badge className="border-amber-300 bg-amber-100 text-amber-800">fallback</Badge>
+                ) : null}
                 <Badge
                   className={
-                    recommendationReason === 'low_sample' || recommendationReason === 'no_history'
+                    recommendationReason === 'low_sample_contextual' ||
+                    recommendationReason === 'low_sample_global' ||
+                    recommendationReason === 'fallback_global_no_context' ||
+                    recommendationReason === 'no_history_global'
                       ? 'border-amber-300 bg-amber-100 text-amber-800'
                       : 'border-emerald-300 bg-emerald-100 text-emerald-800'
                   }
                 >
-                  {recommendationReason ?? 'ok'}
+                  {recommendationReason ?? 'ok_global'}
                 </Badge>
               </div>
               <p className="mt-2 text-sm text-zinc-600">
@@ -237,10 +389,16 @@ export function RecommendationDashboard() {
                 {recommendation.data ? asPercent(recommendation.data.global_win_rate) : '--'}
               </p>
               <p className="mt-2 text-sm text-zinc-500">{reasonLabel}</p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Filtri applicati:{' '}
+                {recommendation.data?.applied_filters.length
+                  ? recommendation.data.applied_filters.join(', ')
+                  : 'nessuno'}
+              </p>
             </div>
           )}
 
-          {offeredCards.length > 0 ? (
+          {activeCards.length > 0 ? (
             <div className="rounded-lg border border-zinc-300 bg-zinc-50 p-4">
               <p className="text-sm font-medium text-zinc-700">Dettaglio carte offerte</p>
               {cardInsights.isLoading ? (
@@ -263,6 +421,30 @@ export function RecommendationDashboard() {
               )}
             </div>
           ) : null}
+
+          <div className="rounded-lg border border-zinc-300 bg-zinc-50 p-4">
+            <p className="text-sm font-medium text-zinc-700">Diagnostica ingest recente</p>
+            {ingestStatus.isLoading ? (
+              <Skeleton className="mt-3 h-14 w-full" />
+            ) : ingestStatus.data?.recent_issues.length ? (
+              <div className="mt-3 space-y-2">
+                {ingestStatus.data.recent_issues.map((issue) => (
+                  <div
+                    key={`${issue.timestamp}-${issue.file_path}`}
+                    className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2"
+                  >
+                    <p className="text-xs font-semibold text-amber-900">
+                      {issue.kind} - {issue.file_path}
+                    </p>
+                    <p className="mt-1 text-xs text-amber-800">{issue.message}</p>
+                    <p className="mt-1 text-[11px] text-amber-700">{issue.timestamp}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-zinc-500">Nessun errore ingest recente.</p>
+            )}
+          </div>
         </CardContent>
       </Card>
     </main>

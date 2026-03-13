@@ -1,12 +1,28 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlmodel import Session, delete, select
 
 from core.db.models import CardChoice, RelicHistory, Run
 from core.ingestion.parser import RunParseError, parse_run_file
+
+
+MAX_RECENT_ISSUES = 20
+
+
+@dataclass(frozen=True)
+class ImportIssue:
+    kind: str
+    file_path: str
+    message: str
+    timestamp: str
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass
@@ -16,6 +32,10 @@ class ImportReport:
     updated: int = 0
     skipped: int = 0
     parse_errors: int = 0
+    recent_issues: list[ImportIssue] = field(default_factory=list)
+    last_processed_run_id: str | None = None
+    last_processed_file: str | None = None
+    last_event_at: str | None = None
 
     def absorb(self, other: "ImportReport") -> None:
         self.scanned += other.scanned
@@ -23,9 +43,18 @@ class ImportReport:
         self.updated += other.updated
         self.skipped += other.skipped
         self.parse_errors += other.parse_errors
+        self.recent_issues.extend(other.recent_issues)
+        if len(self.recent_issues) > MAX_RECENT_ISSUES:
+            self.recent_issues = self.recent_issues[-MAX_RECENT_ISSUES:]
+        if other.last_processed_run_id is not None:
+            self.last_processed_run_id = other.last_processed_run_id
+        if other.last_processed_file is not None:
+            self.last_processed_file = other.last_processed_file
+        if other.last_event_at is not None:
+            self.last_event_at = other.last_event_at
 
 
-def _upsert_run(session: Session, file_path: Path) -> str:
+def _upsert_run(session: Session, file_path: Path) -> tuple[str, str]:
     parsed = parse_run_file(file_path)
     existing = session.get(Run, parsed.run_id)
     if existing:
@@ -70,7 +99,7 @@ def _upsert_run(session: Session, file_path: Path) -> str:
             )
         )
 
-    return status
+    return status, parsed.run_id
 
 
 def import_history(history_path: Path, session: Session) -> ImportReport:
@@ -86,19 +115,43 @@ def import_history(history_path: Path, session: Session) -> ImportReport:
 
 def import_run_file(run_file: Path, session: Session) -> ImportReport:
     report = ImportReport(scanned=1)
+    event_time = _utc_now_iso()
     try:
-        status = _upsert_run(session, run_file)
+        status, run_id = _upsert_run(session, run_file)
         if status == "updated":
             report.updated += 1
         else:
             report.imported += 1
+        report.last_processed_run_id = run_id
+        report.last_processed_file = str(run_file)
+        report.last_event_at = event_time
         session.commit()
-    except RunParseError:
+    except RunParseError as exc:
         session.rollback()
         report.parse_errors += 1
-    except Exception:
+        report.last_processed_file = str(run_file)
+        report.last_event_at = event_time
+        report.recent_issues.append(
+            ImportIssue(
+                kind="parse_error",
+                file_path=str(run_file),
+                message=str(exc),
+                timestamp=event_time,
+            )
+        )
+    except Exception as exc:
         session.rollback()
         report.skipped += 1
+        report.last_processed_file = str(run_file)
+        report.last_event_at = event_time
+        report.recent_issues.append(
+            ImportIssue(
+                kind="skipped",
+                file_path=str(run_file),
+                message=str(exc),
+                timestamp=event_time,
+            )
+        )
     return report
 
 

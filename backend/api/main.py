@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from api.routers.health import router as health_router
 from api.routers.ingest import router as ingest_router
+from api.routers.live import router as live_router
 from api.routers.recommendation import router as recommendation_router
 from api.routers.stats import router as stats_router
 from api.state import apply_import_report
@@ -54,3 +55,4 @@ app.include_router(health_router)
 app.include_router(stats_router)
 app.include_router(recommendation_router)
 app.include_router(ingest_router)
+app.include_router(live_router)

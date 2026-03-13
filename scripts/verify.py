@@ -33,6 +33,7 @@ def main() -> int:
     steps = [
         (backend_dir, ["uv", "run", "ruff", "check", "."], "backend lint"),
         (backend_dir, ["uv", "run", "pytest"], "backend tests"),
+        (frontend_dir, ["pnpm", "run", "test"], "frontend tests"),
         (frontend_dir, ["pnpm", "run", "lint"], "frontend lint"),
         (frontend_dir, ["pnpm", "run", "build"], "frontend build"),
     ]

@@ -4,9 +4,11 @@ import {
   fetchCardInsights,
   fetchHealth,
   fetchIngestStatus,
+  fetchLiveContext,
   fetchRecommendation,
   fetchStats,
 } from './api'
+import type { RecommendationContext } from './types'
 
 const DEFAULT_OFFERED = ['CARD.BASH', 'CARD.CLOTHESLINE', 'CARD.OFF_BALANCE']
 
@@ -26,10 +28,10 @@ export function useStats() {
   })
 }
 
-export function useRecommendation(offered = DEFAULT_OFFERED) {
+export function useRecommendation(offered = DEFAULT_OFFERED, context?: RecommendationContext) {
   return useQuery({
-    queryKey: ['recommendation', offered],
-    queryFn: () => fetchRecommendation(offered),
+    queryKey: ['recommendation', offered, context ?? null],
+    queryFn: () => fetchRecommendation(offered, context),
     refetchInterval: 7000,
     enabled: offered.length > 0,
   })
@@ -49,6 +51,14 @@ export function useCardInsights(offered = DEFAULT_OFFERED) {
     queryFn: () => fetchCardInsights(offered),
     refetchInterval: 7000,
     enabled: offered.length > 0,
+  })
+}
+
+export function useLiveContext() {
+  return useQuery({
+    queryKey: ['live-context'],
+    queryFn: fetchLiveContext,
+    refetchInterval: 3000,
   })
 }
 

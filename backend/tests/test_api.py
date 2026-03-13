@@ -30,6 +30,10 @@ def client_and_engine():
     ingest_status.updated = 0
     ingest_status.parse_errors = 0
     ingest_status.skipped = 0
+    ingest_status.recent_issues = []
+    ingest_status.last_processed_run_id = None
+    ingest_status.last_processed_file = None
+    ingest_status.last_event_at = None
     try:
         with TestClient(app) as client:
             yield client, engine
@@ -40,6 +44,10 @@ def client_and_engine():
         ingest_status.updated = 0
         ingest_status.parse_errors = 0
         ingest_status.skipped = 0
+        ingest_status.recent_issues = []
+        ingest_status.last_processed_run_id = None
+        ingest_status.last_processed_file = None
+        ingest_status.last_event_at = None
 
 
 def test_health_endpoint(client_and_engine):
@@ -112,9 +120,12 @@ def test_recommendation_endpoint_selects_best_pick(client_and_engine):
     assert payload["win_rate_boost"] > 0
     assert payload["confidence"] > 0
     assert payload["sample_size"] == 1
-    assert payload["reason"] == "low_sample"
+    assert payload["reason"] == "low_sample_global"
     assert payload["card_win_rate"] == 1.0
     assert payload["global_win_rate"] == 0.6667
+    assert payload["scope"] == "global"
+    assert payload["applied_filters"] == []
+    assert payload["fallback_used"] is False
 
 
 def test_recommendation_endpoint_no_history_reason(client_and_engine):
@@ -125,9 +136,12 @@ def test_recommendation_endpoint_no_history_reason(client_and_engine):
     assert response.status_code == 200
     payload = response.json()
     assert payload["best_pick"] == "CARD.BASH"
-    assert payload["reason"] == "no_history"
+    assert payload["reason"] == "no_history_global"
     assert payload["sample_size"] == 0
     assert payload["confidence"] == 0.0
+    assert payload["scope"] == "global"
+    assert payload["applied_filters"] == []
+    assert payload["fallback_used"] is False
 
 
 def test_ingest_status_endpoint_defaults_to_zero(client_and_engine):
@@ -142,10 +156,25 @@ def test_ingest_status_endpoint_defaults_to_zero(client_and_engine):
         "updated",
         "parse_errors",
         "skipped",
+        "recent_issues",
+        "last_processed_run_id",
+        "last_processed_file",
+        "last_event_at",
     }
     for key, value in payload.items():
+        if key in {
+            "recent_issues",
+            "last_processed_run_id",
+            "last_processed_file",
+            "last_event_at",
+        }:
+            continue
         assert isinstance(value, int)
         assert value >= 0
+    assert payload["recent_issues"] == []
+    assert payload["last_processed_run_id"] is None
+    assert payload["last_processed_file"] is None
+    assert payload["last_event_at"] is None
 
 
 def test_card_insights_endpoint_returns_expected_rows(client_and_engine):
@@ -366,4 +395,183 @@ def test_recommendation_endpoint_trims_and_deduplicates_cards(client_and_engine)
     payload = response.json()
     assert payload["best_pick"] == "CARD.CLOTHESLINE"
     assert payload["sample_size"] == 1
-    assert payload["reason"] == "low_sample"
+    assert payload["reason"] == "low_sample_global"
+
+
+def test_recommendation_endpoint_prefers_contextual_scope_when_history_exists(
+    client_and_engine,
+):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Run(id="run-a", win=True, character="IRONCLAD", ascension=10),
+                Run(id="run-b", win=False, character="IRONCLAD", ascension=10),
+                Run(id="run-c", win=False, character="IRONCLAD", ascension=10),
+                Run(id="run-d", win=True, character="SILENT", ascension=10),
+                Run(id="run-e", win=False, character="SILENT", ascension=10),
+            ]
+        )
+        session.add_all(
+            [
+                CardChoice(
+                    run_id="run-a",
+                    floor=2,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.BASH",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-b",
+                    floor=2,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.BASH",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-c",
+                    floor=2,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.CLOTHESLINE",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-d",
+                    floor=2,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.CLOTHESLINE",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-e",
+                    floor=2,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.CLOTHESLINE",
+                    is_shop=False,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get(
+        "/recommendation?cards=CARD.BASH,CARD.CLOTHESLINE&character=IRONCLAD&ascension=10&floor=2"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["best_pick"] == "CARD.BASH"
+    assert payload["scope"] == "character_ascension_floor"
+    assert payload["applied_filters"] == ["character", "ascension", "floor"]
+    assert payload["fallback_used"] is False
+
+
+def test_recommendation_endpoint_falls_back_to_global_when_context_missing(
+    client_and_engine,
+):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Run(id="run-1", win=True, character="SILENT", ascension=1),
+                Run(id="run-2", win=False, character="SILENT", ascension=1),
+                Run(id="run-3", win=True, character="SILENT", ascension=1),
+            ]
+        )
+        session.add_all(
+            [
+                CardChoice(
+                    run_id="run-1",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.CLOTHESLINE",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-2",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.BASH",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-3",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.CLOTHESLINE",
+                    is_shop=False,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get(
+        "/recommendation?cards=CARD.BASH,CARD.CLOTHESLINE&character=IRONCLAD&ascension=10&floor=5"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scope"] == "global"
+    assert payload["fallback_used"] is True
+    assert payload["reason"] == "fallback_global_no_context"
+
+
+def test_live_context_endpoint_returns_unavailable_when_no_card_choices(
+    client_and_engine,
+):
+    client, _ = client_and_engine
+
+    response = client.get("/live/context")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {
+        "available": False,
+        "run_id": None,
+        "character": None,
+        "ascension": None,
+        "floor": None,
+        "offered_cards": [],
+        "picked_card": None,
+    }
+
+
+def test_live_context_endpoint_returns_latest_card_choice(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Run(id="run-1", character="IRONCLAD", ascension=5, win=False),
+                Run(id="run-2", character="SILENT", ascension=10, win=True),
+            ]
+        )
+        session.add_all(
+            [
+                CardChoice(
+                    run_id="run-1",
+                    floor=3,
+                    offered_cards=["CARD.A", "CARD.B"],
+                    picked_card="CARD.A",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-2",
+                    floor=7,
+                    offered_cards=["CARD.C", "CARD.D"],
+                    picked_card="CARD.D",
+                    is_shop=False,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/live/context")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["run_id"] == "run-2"
+    assert payload["character"] == "SILENT"
+    assert payload["ascension"] == 10
+    assert payload["floor"] == 7
+    assert payload["offered_cards"] == ["CARD.C", "CARD.D"]
+    assert payload["picked_card"] == "CARD.D"

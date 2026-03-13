@@ -1,4 +1,12 @@
-import type { CardInsights, HealthStatus, IngestStatus, Recommendation, RunStats } from './types'
+import type {
+  CardInsights,
+  HealthStatus,
+  IngestStatus,
+  LiveContext,
+  Recommendation,
+  RecommendationContext,
+  RunStats,
+} from './types'
 
 const API_BASE = '/api'
 
@@ -18,8 +26,21 @@ export function fetchStats(): Promise<RunStats> {
   return fetchJson<RunStats>('/runs/stats')
 }
 
-export function fetchRecommendation(cards: string[]): Promise<Recommendation> {
-  const query = new URLSearchParams({ cards: cards.join(',') }).toString()
+export function fetchRecommendation(
+  cards: string[],
+  context?: RecommendationContext,
+): Promise<Recommendation> {
+  const params = new URLSearchParams({ cards: cards.join(',') })
+  if (context?.character) {
+    params.set('character', context.character)
+  }
+  if (typeof context?.ascension === 'number') {
+    params.set('ascension', String(context.ascension))
+  }
+  if (typeof context?.floor === 'number') {
+    params.set('floor', String(context.floor))
+  }
+  const query = params.toString()
   return fetchJson<Recommendation>(`/recommendation?${query}`)
 }
 
@@ -30,4 +51,8 @@ export function fetchIngestStatus(): Promise<IngestStatus> {
 export function fetchCardInsights(cards: string[]): Promise<CardInsights> {
   const query = new URLSearchParams({ cards: cards.join(',') }).toString()
   return fetchJson<CardInsights>(`/runs/card-insights?${query}`)
+}
+
+export function fetchLiveContext(): Promise<LiveContext> {
+  return fetchJson<LiveContext>('/live/context')
 }

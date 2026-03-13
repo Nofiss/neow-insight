@@ -6,7 +6,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from core.db.models import CardChoice, Run
-from core.ingestion.importer import import_history
+from core.ingestion.importer import MAX_RECENT_ISSUES, import_history
 
 
 def _write_run(path, *, run_id: str, victory: bool, picked: str) -> None:
@@ -67,3 +67,55 @@ def test_import_history_upserts_existing_run(tmp_path):
         ).all()
         assert len(picks) == 1
         assert picks[0].picked_card == "CARD.STRIKE"
+
+
+def test_import_history_collects_parse_errors_with_diagnostics(tmp_path):
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    history_dir = tmp_path / "history"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    run_file = history_dir / "broken.run"
+    run_file.write_text("{broken-json}", encoding="utf-8")
+
+    with Session(engine) as session:
+        report = import_history(history_dir, session)
+
+    assert report.scanned == 1
+    assert report.parse_errors == 1
+    assert report.skipped == 0
+    assert len(report.recent_issues) == 1
+    issue = report.recent_issues[0]
+    assert issue.kind == "parse_error"
+    assert issue.file_path.endswith("broken.run")
+    assert "invalid json" in issue.message
+    assert issue.timestamp
+
+
+def test_import_history_keeps_only_latest_recent_issues(tmp_path):
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    history_dir = tmp_path / "history"
+    history_dir.mkdir(parents=True, exist_ok=True)
+
+    for idx in range(MAX_RECENT_ISSUES + 5):
+        run_file = history_dir / f"broken-{idx:02}.run"
+        run_file.write_text("{broken-json}", encoding="utf-8")
+
+    with Session(engine) as session:
+        report = import_history(history_dir, session)
+
+    assert report.scanned == MAX_RECENT_ISSUES + 5
+    assert report.parse_errors == MAX_RECENT_ISSUES + 5
+    assert len(report.recent_issues) == MAX_RECENT_ISSUES
+    assert report.recent_issues[0].file_path.endswith("broken-05.run")
+    assert report.recent_issues[-1].file_path.endswith("broken-24.run")
