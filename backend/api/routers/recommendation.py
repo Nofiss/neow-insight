@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
@@ -9,6 +11,7 @@ from core.db import get_session
 
 
 router = APIRouter(tags=["recommendation"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/recommendation", response_model=RecommendationResponse)
@@ -18,6 +21,11 @@ def recommendation(
 ) -> RecommendationResponse:
     offered_cards = [card.strip() for card in cards.split(",") if card.strip()]
     result = recommend_card(session, offered_cards)
+    logger.info(
+        "recommendation computed reason=%s sample_size=%d",
+        result.reason,
+        result.sample_size,
+    )
     return RecommendationResponse(
         best_pick=result.best_pick,
         win_rate_boost=result.win_rate_boost,

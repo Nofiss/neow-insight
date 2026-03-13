@@ -24,6 +24,13 @@ function parseCardsInput(value: string): string[] {
     .filter(Boolean)
 }
 
+const REASON_LABELS = {
+  low_sample: 'Campione ridotto: considera il suggerimento con cautela.',
+  no_history: 'Storico assente: suggerimento basato su fallback iniziale.',
+  no_candidates: 'Nessuna carta valida ricevuta in input.',
+  ok: 'Confidenza adeguata sui dati disponibili.',
+} as const
+
 export function RecommendationDashboard() {
   const [cardsInput, setCardsInput] = useState(DEFAULT_OFFERED.join(', '))
   const offeredCards = useMemo(() => parseCardsInput(cardsInput), [cardsInput])
@@ -42,14 +49,7 @@ export function RecommendationDashboard() {
     ingestStatus.isError
 
   const recommendationReason = recommendation.data?.reason
-  const reasonLabel =
-    recommendationReason === 'low_sample'
-      ? 'Campione basso: usa il suggerimento con cautela.'
-      : recommendationReason === 'no_history'
-        ? 'Storico assente: pick suggerita senza base statistica.'
-        : recommendationReason === 'no_candidates'
-          ? 'Nessuna carta valida in input.'
-          : 'Confidenza adeguata sui dati disponibili.'
+  const reasonLabel = REASON_LABELS[recommendationReason ?? 'ok']
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:py-12">
