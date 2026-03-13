@@ -1,5 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
-@import 'tailwindcss';
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
 
 :root {
   --background: 42 40% 97%;
@@ -9,7 +9,7 @@
   --muted: 30 20% 91%;
   --muted-foreground: 24 10% 42%;
   --border: 28 21% 82%;
-  --font-sans: 'Manrope', 'Segoe UI', sans-serif;
+  --font-sans: "Manrope", "Segoe UI", sans-serif;
 }
 
 @theme inline {

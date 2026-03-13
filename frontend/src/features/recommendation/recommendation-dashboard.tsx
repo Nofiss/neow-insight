@@ -1,22 +1,10 @@
+import { useMemo, useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useMemo, useState } from 'react'
 
-import {
-  DEFAULT_OFFERED,
-  useHealth,
-  useIngestStatus,
-  useRecommendation,
-  useStats,
-} from './hooks'
+import { DEFAULT_OFFERED, useHealth, useIngestStatus, useRecommendation, useStats } from './hooks'
 
 function asPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`
@@ -38,11 +26,7 @@ export function RecommendationDashboard() {
   const recommendation = useRecommendation(offeredCards)
   const ingestStatus = useIngestStatus()
 
-  const hasError =
-    health.isError ||
-    stats.isError ||
-    recommendation.isError ||
-    ingestStatus.isError
+  const hasError = health.isError || stats.isError || recommendation.isError || ingestStatus.isError
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:py-12">
@@ -123,9 +107,7 @@ export function RecommendationDashboard() {
               <Skeleton className="h-7 w-24" />
             ) : (
               <p className="text-2xl font-semibold text-zinc-900">
-                {recommendation.data
-                  ? asPercent(recommendation.data.confidence)
-                  : '--'}
+                {recommendation.data ? asPercent(recommendation.data.confidence) : '--'}
               </p>
             )}
           </CardContent>
@@ -184,7 +166,9 @@ export function RecommendationDashboard() {
               </Badge>
             ))}
             {offeredCards.length === 0 ? (
-              <p className="text-sm text-zinc-500">Aggiungi almeno una carta per ottenere un suggerimento.</p>
+              <p className="text-sm text-zinc-500">
+                Aggiungi almeno una carta per ottenere un suggerimento.
+              </p>
             ) : null}
           </div>
 
@@ -192,7 +176,9 @@ export function RecommendationDashboard() {
             <div className="rounded-lg border border-zinc-300 bg-white p-4">
               <p className="text-sm text-zinc-500">Best pick</p>
               <p className="mt-1 text-xl font-semibold text-zinc-900">N/A</p>
-              <p className="mt-2 text-sm text-zinc-600">Inserisci un set valido di carte offerte.</p>
+              <p className="mt-2 text-sm text-zinc-600">
+                Inserisci un set valido di carte offerte.
+              </p>
             </div>
           ) : recommendation.isLoading ? (
             <Skeleton className="h-20 w-full" />
@@ -205,9 +191,7 @@ export function RecommendationDashboard() {
               <p className="mt-2 text-sm text-zinc-600">
                 Win rate boost stimato:{' '}
                 <span className="font-medium text-emerald-700">
-                  {recommendation.data
-                    ? asPercent(recommendation.data.win_rate_boost)
-                    : '--'}
+                  {recommendation.data ? asPercent(recommendation.data.win_rate_boost) : '--'}
                 </span>
               </p>
             </div>

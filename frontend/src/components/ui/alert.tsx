@@ -1,4 +1,4 @@
-import * as React from 'react'
+import type * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -6,10 +6,7 @@ function Alert({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       role="alert"
-      className={cn(
-        'bg-card text-card-foreground rounded-xl border px-4 py-3 text-sm',
-        className,
-      )}
+      className={cn('bg-card text-card-foreground rounded-xl border px-4 py-3 text-sm', className)}
       {...props}
     />
   )

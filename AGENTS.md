@@ -69,15 +69,15 @@ Run commands from the repository root unless otherwise noted.
 ## Frontend Commands (`frontend/`)
 
 - Install dependencies:
-  - `npm install`
+  - `pnpm install`
 - Start dev server:
-  - `npm run dev`
+  - `pnpm run dev`
 - Lint:
-  - `npm run lint`
+  - `pnpm run lint`
 - Build:
-  - `npm run build`
+  - `pnpm run build`
 - Preview build:
-  - `npm run preview`
+  - `pnpm run preview`
 
 Note: no frontend test runner is configured currently; lint + build are the quality gates.
 

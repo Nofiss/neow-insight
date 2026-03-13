@@ -1,11 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 
-import {
-  fetchHealth,
-  fetchIngestStatus,
-  fetchRecommendation,
-  fetchStats,
-} from './api'
+import { fetchHealth, fetchIngestStatus, fetchRecommendation, fetchStats } from './api'
 
 const DEFAULT_OFFERED = ['CARD.BASH', 'CARD.CLOTHESLINE', 'CARD.OFF_BALANCE']
 

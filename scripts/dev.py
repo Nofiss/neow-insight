@@ -26,7 +26,7 @@ def main() -> int:
         return 1
 
     backend_cmd = ["uv", "run", "api-dev"]
-    frontend_cmd = ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"]
+    frontend_cmd = ["pnpm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"]
 
     backend_proc = subprocess.Popen(backend_cmd, cwd=backend_dir)
     frontend_proc = subprocess.Popen(frontend_cmd, cwd=frontend_dir)

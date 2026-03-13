@@ -9,8 +9,8 @@ from pathlib import Path
 def _run(command: list[str], *, cwd: Path, label: str) -> int:
     print(f"[verify] {label}")
     executable = command[0]
-    if sys.platform == "win32" and executable == "npm":
-        executable = "npm.cmd"
+    if sys.platform == "win32" and executable == "pnpm":
+        executable = "pnpm.cmd"
     resolved = shutil.which(executable)
     if not resolved:
         print(f"[verify] executable not found: {executable}")
@@ -33,8 +33,8 @@ def main() -> int:
     steps = [
         (backend_dir, ["uv", "run", "ruff", "check", "."], "backend lint"),
         (backend_dir, ["uv", "run", "pytest"], "backend tests"),
-        (frontend_dir, ["npm", "run", "lint"], "frontend lint"),
-        (frontend_dir, ["npm", "run", "build"], "frontend build"),
+        (frontend_dir, ["pnpm", "run", "lint"], "frontend lint"),
+        (frontend_dir, ["pnpm", "run", "build"], "frontend build"),
     ]
 
     for cwd, command, label in steps:

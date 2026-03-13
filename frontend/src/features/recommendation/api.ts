@@ -1,9 +1,4 @@
-import type {
-  HealthStatus,
-  IngestStatus,
-  Recommendation,
-  RunStats,
-} from './types'
+import type { HealthStatus, IngestStatus, Recommendation, RunStats } from './types'
 
 const API_BASE = '/api'
 

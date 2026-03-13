@@ -105,8 +105,7 @@ Setup rapido della dashboard:
 pnpm create vite@latest frontend -- --template react-ts
 cd frontend
 pnpm install
-pnpm install -D tailwindcss postcss autoprefixer
-npx tailwindcss init -p
+pnpm install -D tailwindcss @tailwindcss/vite
 ```
 
 ### Componente Raccomandazione (Esempio)
