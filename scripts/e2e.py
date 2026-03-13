@@ -9,8 +9,12 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from process_utils import resolve_command, terminate_process
 
-API_URL = "http://127.0.0.1:8010"
+
+BACKEND_HOST = "127.0.0.1"
+BACKEND_PORT = "8010"
+API_URL = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
 
 
 def _get_json(url: str) -> dict[str, object]:
@@ -35,16 +39,6 @@ def _wait_for_health(timeout_seconds: int = 20) -> None:
     raise RuntimeError("backend healthcheck timeout")
 
 
-def _terminate(proc: subprocess.Popen[bytes]) -> None:
-    if proc.poll() is not None:
-        return
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-
-
 def main() -> int:
     workspace_root = Path(__file__).resolve().parents[1]
     backend_dir = workspace_root / "backend"
@@ -55,15 +49,27 @@ def main() -> int:
     backend_cmd = [
         "uv",
         "run",
+        "python",
+        "-m",
         "uvicorn",
         "api.main:app",
         "--host",
-        "127.0.0.1",
+        BACKEND_HOST,
         "--port",
-        "8010",
+        BACKEND_PORT,
     ]
 
-    backend_proc = subprocess.Popen(backend_cmd, cwd=backend_dir)
+    try:
+        backend_cmd, backend_executable = resolve_command(backend_cmd)
+    except FileNotFoundError:
+        print("e2e failed: 'uv' was not found in PATH")
+        return 1
+
+    try:
+        backend_proc = subprocess.Popen(backend_cmd, cwd=backend_dir)
+    except FileNotFoundError:
+        print(f"e2e failed: '{backend_executable}' was not found in PATH")
+        return 1
     try:
         _wait_for_health()
 
@@ -87,7 +93,7 @@ def main() -> int:
         print(f"e2e failed: {exc}")
         return 1
     finally:
-        _terminate(backend_proc)
+        terminate_process(backend_proc)
 
 
 if __name__ == "__main__":

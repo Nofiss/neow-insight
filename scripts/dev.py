@@ -2,18 +2,15 @@ from __future__ import annotations
 
 import signal
 import subprocess
-import sys
 from pathlib import Path
 
+from process_utils import resolve_command, terminate_process
 
-def _terminate(proc: subprocess.Popen[bytes]) -> None:
-    if proc.poll() is not None:
-        return
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
+
+BACKEND_HOST = "127.0.0.1"
+BACKEND_PORT = "8000"
+FRONTEND_HOST = "127.0.0.1"
+FRONTEND_PORT = "5173"
 
 
 def main() -> int:
@@ -25,19 +22,52 @@ def main() -> int:
         print("backend/ or frontend/ directory not found")
         return 1
 
-    backend_cmd = ["uv", "run", "api-dev"]
-    frontend_cmd = ["pnpm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"]
+    backend_cmd = ["uv", "run", "python", "-m", "scripts.api_dev"]
+    frontend_cmd = [
+        "pnpm",
+        "run",
+        "dev",
+        "--",
+        "--host",
+        FRONTEND_HOST,
+        "--port",
+        FRONTEND_PORT,
+    ]
 
-    backend_proc = subprocess.Popen(backend_cmd, cwd=backend_dir)
-    frontend_proc = subprocess.Popen(frontend_cmd, cwd=frontend_dir)
+    try:
+        backend_cmd, backend_executable = resolve_command(backend_cmd)
+    except FileNotFoundError:
+        print("Could not start backend: 'uv' was not found in PATH")
+        return 1
 
-    print("backend: http://127.0.0.1:8000")
-    print("frontend: http://127.0.0.1:5173")
+    try:
+        frontend_cmd, frontend_executable = resolve_command(frontend_cmd)
+    except FileNotFoundError:
+        print("Could not start frontend: 'pnpm' was not found in PATH")
+        return 1
+
+    try:
+        backend_proc = subprocess.Popen(backend_cmd, cwd=backend_dir)
+    except FileNotFoundError:
+        print(f"Could not start backend: '{backend_executable}' was not found in PATH")
+        return 1
+
+    try:
+        frontend_proc = subprocess.Popen(frontend_cmd, cwd=frontend_dir)
+    except FileNotFoundError:
+        terminate_process(backend_proc)
+        print(
+            f"Could not start frontend: '{frontend_executable}' was not found in PATH"
+        )
+        return 1
+
+    print(f"backend: http://localhost:{BACKEND_PORT}")
+    print(f"frontend: http://localhost:{FRONTEND_PORT}")
     print("press Ctrl+C to stop")
 
     def stop_handler(_signum: int, _frame: object) -> None:
-        _terminate(frontend_proc)
-        _terminate(backend_proc)
+        terminate_process(frontend_proc)
+        terminate_process(backend_proc)
 
     signal.signal(signal.SIGINT, stop_handler)
     signal.signal(signal.SIGTERM, stop_handler)
@@ -46,12 +76,12 @@ def main() -> int:
         backend_code = backend_proc.wait()
         frontend_code = frontend_proc.poll()
         if frontend_code is None:
-            _terminate(frontend_proc)
+            terminate_process(frontend_proc)
             frontend_code = frontend_proc.wait()
         return backend_code or frontend_code
     finally:
-        _terminate(frontend_proc)
-        _terminate(backend_proc)
+        terminate_process(frontend_proc)
+        terminate_process(backend_proc)
 
 
 if __name__ == "__main__":
