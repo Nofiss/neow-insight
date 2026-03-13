@@ -22,7 +22,9 @@ def card_insights(
     cards: str = "",
     session: Session = Depends(get_session),
 ) -> CardInsightsResponse:
-    offered_cards = [card.strip() for card in cards.split(",") if card.strip()]
+    offered_cards = list(
+        dict.fromkeys(card.strip() for card in cards.split(",") if card.strip())
+    )
     global_win_rate, insights = compute_card_insights(session, offered_cards)
     return CardInsightsResponse(
         global_win_rate=global_win_rate,

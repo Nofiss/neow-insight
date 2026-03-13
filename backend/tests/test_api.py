@@ -203,3 +203,167 @@ def test_card_insights_endpoint_returns_expected_rows(client_and_engine):
         "card_win_rate": 1.0,
         "win_rate_boost": 0.3333,
     }
+
+
+def test_card_insights_endpoint_empty_cards_query_returns_empty_insights(
+    client_and_engine,
+):
+    client, _ = client_and_engine
+
+    response = client.get("/runs/card-insights?cards=")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["global_win_rate"] == 0.0
+    assert payload["insights"] == []
+
+
+def test_card_insights_endpoint_without_cards_param_returns_empty_insights(
+    client_and_engine,
+):
+    client, _ = client_and_engine
+
+    response = client.get("/runs/card-insights")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["global_win_rate"] == 0.0
+    assert payload["insights"] == []
+
+
+def test_card_insights_endpoint_trims_and_deduplicates_cards(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Run(id="run-1", win=True),
+                Run(id="run-2", win=False),
+                Run(id="run-3", win=True),
+            ]
+        )
+        session.add_all(
+            [
+                CardChoice(
+                    run_id="run-1",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.BASH",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-2",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.BASH",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-3",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.CLOTHESLINE",
+                    is_shop=False,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get(
+        "/runs/card-insights?cards=  CARD.BASH , CARD.BASH  ,  CARD.CLOTHESLINE  "
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["card"] for item in payload["insights"]] == [
+        "CARD.BASH",
+        "CARD.CLOTHESLINE",
+    ]
+
+
+def test_card_insights_endpoint_unknown_card_uses_global_win_rate(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Run(id="run-1", win=True),
+                Run(id="run-2", win=False),
+                Run(id="run-3", win=True),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/runs/card-insights?cards=CARD.UNKNOWN")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["global_win_rate"] == 0.6667
+    assert payload["insights"] == [
+        {
+            "card": "CARD.UNKNOWN",
+            "sample_size": 0,
+            "card_win_rate": 0.6667,
+            "win_rate_boost": 0.0,
+        }
+    ]
+
+
+def test_card_insights_endpoint_handles_long_card_list(client_and_engine):
+    client, _ = client_and_engine
+    cards = [f"CARD.TEST_{index}" for index in range(1, 51)]
+    query = ",".join(cards)
+
+    response = client.get(f"/runs/card-insights?cards={query}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["global_win_rate"] == 0.0
+    assert len(payload["insights"]) == 50
+    assert [item["card"] for item in payload["insights"]] == cards
+
+
+def test_recommendation_endpoint_trims_and_deduplicates_cards(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Run(id="run-1", win=True),
+                Run(id="run-2", win=False),
+                Run(id="run-3", win=True),
+            ]
+        )
+        session.add_all(
+            [
+                CardChoice(
+                    run_id="run-1",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.BASH",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-2",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.BASH",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-3",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.CLOTHESLINE",
+                    is_shop=False,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get(
+        "/recommendation?cards=  CARD.BASH , CARD.BASH  ,  CARD.CLOTHESLINE  "
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["best_pick"] == "CARD.CLOTHESLINE"
+    assert payload["sample_size"] == 1
+    assert payload["reason"] == "low_sample"

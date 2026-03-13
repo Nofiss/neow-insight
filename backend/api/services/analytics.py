@@ -73,8 +73,12 @@ def _compute_card_pick_stats(
     }
 
 
+def _normalize_cards(cards: list[str]) -> list[str]:
+    return list(dict.fromkeys(card.strip() for card in cards if card and card.strip()))
+
+
 def recommend_card(session: Session, offered_cards: list[str]) -> RecommendationResult:
-    candidates = [card for card in offered_cards if card]
+    candidates = _normalize_cards(offered_cards)
     if not candidates:
         return RecommendationResult(
             best_pick=None,
@@ -141,7 +145,7 @@ def recommend_card(session: Session, offered_cards: list[str]) -> Recommendation
 def compute_card_insights(
     session: Session, offered_cards: list[str]
 ) -> tuple[float, list[CardInsightResult]]:
-    candidates = [card for card in offered_cards if card]
+    candidates = _normalize_cards(offered_cards)
     if not candidates:
         return 0.0, []
 
