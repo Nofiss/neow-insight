@@ -17,9 +17,13 @@ def recommendation(
     session: Session = Depends(get_session),
 ) -> RecommendationResponse:
     offered_cards = [card.strip() for card in cards.split(",") if card.strip()]
-    best_pick, win_rate_boost, confidence = recommend_card(session, offered_cards)
+    result = recommend_card(session, offered_cards)
     return RecommendationResponse(
-        best_pick=best_pick,
-        win_rate_boost=win_rate_boost,
-        confidence=confidence,
+        best_pick=result.best_pick,
+        win_rate_boost=result.win_rate_boost,
+        confidence=result.confidence,
+        sample_size=result.sample_size,
+        card_win_rate=result.card_win_rate,
+        global_win_rate=result.global_win_rate,
+        reason=result.reason,
     )

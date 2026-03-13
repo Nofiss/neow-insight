@@ -19,6 +19,22 @@ class RecommendationResponse(BaseModel):
     best_pick: str | None
     win_rate_boost: float
     confidence: float
+    sample_size: int
+    card_win_rate: float
+    global_win_rate: float
+    reason: str
+
+
+class CardInsightResponse(BaseModel):
+    card: str
+    sample_size: int
+    card_win_rate: float
+    win_rate_boost: float
+
+
+class CardInsightsResponse(BaseModel):
+    global_win_rate: float
+    insights: list[CardInsightResponse]
 
 
 class IngestStatusResponse(BaseModel):

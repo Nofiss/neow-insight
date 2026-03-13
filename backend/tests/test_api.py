@@ -111,6 +111,23 @@ def test_recommendation_endpoint_selects_best_pick(client_and_engine):
     assert payload["best_pick"] == "CARD.CLOTHESLINE"
     assert payload["win_rate_boost"] > 0
     assert payload["confidence"] > 0
+    assert payload["sample_size"] == 1
+    assert payload["reason"] == "low_sample"
+    assert payload["card_win_rate"] == 1.0
+    assert payload["global_win_rate"] == 0.6667
+
+
+def test_recommendation_endpoint_no_history_reason(client_and_engine):
+    client, _ = client_and_engine
+
+    response = client.get("/recommendation?cards=CARD.BASH,CARD.CLOTHESLINE")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["best_pick"] == "CARD.BASH"
+    assert payload["reason"] == "no_history"
+    assert payload["sample_size"] == 0
+    assert payload["confidence"] == 0.0
 
 
 def test_ingest_status_endpoint_defaults_to_zero(client_and_engine):
@@ -129,3 +146,60 @@ def test_ingest_status_endpoint_defaults_to_zero(client_and_engine):
     for key, value in payload.items():
         assert isinstance(value, int)
         assert value >= 0
+
+
+def test_card_insights_endpoint_returns_expected_rows(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Run(id="run-1", win=True),
+                Run(id="run-2", win=False),
+                Run(id="run-3", win=True),
+            ]
+        )
+        session.add_all(
+            [
+                CardChoice(
+                    run_id="run-1",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.BASH",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-2",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.BASH",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-3",
+                    floor=1,
+                    offered_cards=["CARD.BASH", "CARD.CLOTHESLINE"],
+                    picked_card="CARD.CLOTHESLINE",
+                    is_shop=False,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/runs/card-insights?cards=CARD.BASH,CARD.CLOTHESLINE")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["global_win_rate"] == 0.6667
+    assert len(payload["insights"]) == 2
+    assert payload["insights"][0] == {
+        "card": "CARD.BASH",
+        "sample_size": 2,
+        "card_win_rate": 0.5,
+        "win_rate_boost": -0.1667,
+    }
+    assert payload["insights"][1] == {
+        "card": "CARD.CLOTHESLINE",
+        "sample_size": 1,
+        "card_win_rate": 1.0,
+        "win_rate_boost": 0.3333,
+    }
