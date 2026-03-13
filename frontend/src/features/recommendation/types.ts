@@ -2,6 +2,22 @@ export interface Recommendation {
   best_pick: string | null
   win_rate_boost: number
   confidence: number
+  sample_size: number
+  card_win_rate: number
+  global_win_rate: number
+  reason: 'ok' | 'low_sample' | 'no_history' | 'no_candidates'
+}
+
+export interface CardInsight {
+  card: string
+  sample_size: number
+  card_win_rate: number
+  win_rate_boost: number
+}
+
+export interface CardInsights {
+  global_win_rate: number
+  insights: CardInsight[]
 }
 
 export interface RunStats {

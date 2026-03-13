@@ -4,7 +4,14 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
-import { DEFAULT_OFFERED, useHealth, useIngestStatus, useRecommendation, useStats } from './hooks'
+import {
+  DEFAULT_OFFERED,
+  useCardInsights,
+  useHealth,
+  useIngestStatus,
+  useRecommendation,
+  useStats,
+} from './hooks'
 
 function asPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`
@@ -24,9 +31,25 @@ export function RecommendationDashboard() {
   const health = useHealth()
   const stats = useStats()
   const recommendation = useRecommendation(offeredCards)
+  const cardInsights = useCardInsights(offeredCards)
   const ingestStatus = useIngestStatus()
 
-  const hasError = health.isError || stats.isError || recommendation.isError || ingestStatus.isError
+  const hasError =
+    health.isError ||
+    stats.isError ||
+    recommendation.isError ||
+    cardInsights.isError ||
+    ingestStatus.isError
+
+  const recommendationReason = recommendation.data?.reason
+  const reasonLabel =
+    recommendationReason === 'low_sample'
+      ? 'Campione basso: usa il suggerimento con cautela.'
+      : recommendationReason === 'no_history'
+        ? 'Storico assente: pick suggerita senza base statistica.'
+        : recommendationReason === 'no_candidates'
+          ? 'Nessuna carta valida in input.'
+          : 'Confidenza adeguata sui dati disponibili.'
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:py-12">
@@ -188,14 +211,58 @@ export function RecommendationDashboard() {
               <p className="mt-1 text-xl font-semibold text-zinc-900">
                 {recommendation.data?.best_pick ?? 'N/A'}
               </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Badge className="border-zinc-300 bg-zinc-100 text-zinc-800">
+                  sample {recommendation.data?.sample_size ?? 0}
+                </Badge>
+                <Badge
+                  className={
+                    recommendationReason === 'low_sample' || recommendationReason === 'no_history'
+                      ? 'border-amber-300 bg-amber-100 text-amber-800'
+                      : 'border-emerald-300 bg-emerald-100 text-emerald-800'
+                  }
+                >
+                  {recommendationReason ?? 'ok'}
+                </Badge>
+              </div>
               <p className="mt-2 text-sm text-zinc-600">
                 Win rate boost stimato:{' '}
                 <span className="font-medium text-emerald-700">
                   {recommendation.data ? asPercent(recommendation.data.win_rate_boost) : '--'}
                 </span>
               </p>
+              <p className="mt-1 text-sm text-zinc-600">
+                Carta: {recommendation.data ? asPercent(recommendation.data.card_win_rate) : '--'} |
+                Globale:{' '}
+                {recommendation.data ? asPercent(recommendation.data.global_win_rate) : '--'}
+              </p>
+              <p className="mt-2 text-sm text-zinc-500">{reasonLabel}</p>
             </div>
           )}
+
+          {offeredCards.length > 0 ? (
+            <div className="rounded-lg border border-zinc-300 bg-zinc-50 p-4">
+              <p className="text-sm font-medium text-zinc-700">Dettaglio carte offerte</p>
+              {cardInsights.isLoading ? (
+                <Skeleton className="mt-3 h-16 w-full" />
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {cardInsights.data?.insights.map((item) => (
+                    <div
+                      key={item.card}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2"
+                    >
+                      <p className="text-sm font-medium text-zinc-800">{item.card}</p>
+                      <p className="text-xs text-zinc-600">
+                        sample {item.sample_size} | wr {asPercent(item.card_win_rate)} | delta{' '}
+                        {asPercent(item.win_rate_boost)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </main>

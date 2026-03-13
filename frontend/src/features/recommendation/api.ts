@@ -1,4 +1,4 @@
-import type { HealthStatus, IngestStatus, Recommendation, RunStats } from './types'
+import type { CardInsights, HealthStatus, IngestStatus, Recommendation, RunStats } from './types'
 
 const API_BASE = '/api'
 
@@ -25,4 +25,9 @@ export function fetchRecommendation(cards: string[]): Promise<Recommendation> {
 
 export function fetchIngestStatus(): Promise<IngestStatus> {
   return fetchJson<IngestStatus>('/ingest/status')
+}
+
+export function fetchCardInsights(cards: string[]): Promise<CardInsights> {
+  const query = new URLSearchParams({ cards: cards.join(',') }).toString()
+  return fetchJson<CardInsights>(`/runs/card-insights?${query}`)
 }

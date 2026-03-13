@@ -1,6 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 
-import { fetchHealth, fetchIngestStatus, fetchRecommendation, fetchStats } from './api'
+import {
+  fetchCardInsights,
+  fetchHealth,
+  fetchIngestStatus,
+  fetchRecommendation,
+  fetchStats,
+} from './api'
 
 const DEFAULT_OFFERED = ['CARD.BASH', 'CARD.CLOTHESLINE', 'CARD.OFF_BALANCE']
 
@@ -34,6 +40,15 @@ export function useIngestStatus() {
     queryKey: ['ingest-status'],
     queryFn: fetchIngestStatus,
     refetchInterval: 5000,
+  })
+}
+
+export function useCardInsights(offered = DEFAULT_OFFERED) {
+  return useQuery({
+    queryKey: ['card-insights', offered],
+    queryFn: () => fetchCardInsights(offered),
+    refetchInterval: 7000,
+    enabled: offered.length > 0,
   })
 }
 
