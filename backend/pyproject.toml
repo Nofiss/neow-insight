@@ -1,0 +1,28 @@
+[project]
+name = "neow-insight-backend"
+version = "0.1.0"
+description = "Neow Insight backend services"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.135.1",
+    "pydantic>=2.12.5",
+    "sqlmodel>=0.0.37",
+    "uvicorn>=0.41.0",
+    "watchdog>=6.0.0",
+]
+
+[project.scripts]
+api-dev = "scripts.api_dev:main"
+import-history = "scripts.import_history:main"
+watch-history = "scripts.watch_history:main"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.2",
+    "ruff>=0.15.6",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

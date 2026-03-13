@@ -1,0 +1,44 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+@import 'tailwindcss';
+
+:root {
+  --background: 42 40% 97%;
+  --foreground: 24 24% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 24 24% 12%;
+  --muted: 30 20% 91%;
+  --muted-foreground: 24 10% 42%;
+  --border: 28 21% 82%;
+  --font-sans: 'Manrope', 'Segoe UI', sans-serif;
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-border: hsl(var(--border));
+}
+
+* {
+  border-color: hsl(var(--border));
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100dvh;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: hsl(var(--foreground));
+  background:
+    radial-gradient(circle at 10% 15%, rgba(251, 191, 36, 0.2), transparent 28%),
+    radial-gradient(circle at 88% 85%, rgba(239, 68, 68, 0.17), transparent 30%),
+    linear-gradient(180deg, #fffdf8 0%, #f8f4ea 100%);
+}

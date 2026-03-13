@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+import tomllib
+
+
+@dataclass(frozen=True)
+class Settings:
+    db_path: Path
+    run_history_path: Path
+    log_level: str
+    api_host: str
+    api_port: int
+    enable_watcher: bool
+    watcher_debounce_seconds: float
+
+
+def _default_run_history_path() -> Path:
+    if Path.home().drive:
+        return (
+            Path.home()
+            / "AppData"
+            / "Roaming"
+            / "SlayTheSpire2"
+            / "steam"
+            / "76561198110552884"
+            / "profile1"
+            / "saves"
+            / "history"
+        )
+    return Path.home() / "SlayTheSpire2" / "history"
+
+
+def _load_settings_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        with path.open("rb") as settings_file:
+            data = tomllib.load(settings_file)
+            if isinstance(data, dict):
+                return data
+    except OSError:
+        return {}
+    except tomllib.TOMLDecodeError:
+        return {}
+    return {}
+
+
+def _resolve_path(value: str | None, workspace_root: Path, fallback: Path) -> Path:
+    if not value:
+        return fallback
+    parsed = Path(value)
+    if parsed.is_absolute():
+        return parsed
+    return workspace_root / parsed
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    backend_root = Path(__file__).resolve().parents[1]
+    workspace_root = backend_root.parent
+    settings_file_path = workspace_root / "settings.toml"
+    file_data = _load_settings_file(settings_file_path)
+    api_data = file_data.get("api", {}) if isinstance(file_data, dict) else {}
+    storage_data = file_data.get("storage", {}) if isinstance(file_data, dict) else {}
+    watcher_data = file_data.get("watcher", {}) if isinstance(file_data, dict) else {}
+
+    default_db_path = workspace_root / "data" / "neow_insight.db"
+    default_run_history = _default_run_history_path()
+
+    db_path = _resolve_path(
+        storage_data.get("db_path") if isinstance(storage_data, dict) else None,
+        workspace_root,
+        default_db_path,
+    )
+    run_history_path = _resolve_path(
+        storage_data.get("run_history_path")
+        if isinstance(storage_data, dict)
+        else None,
+        workspace_root,
+        default_run_history,
+    )
+
+    api_host = api_data.get("host") if isinstance(api_data, dict) else None
+    api_port = api_data.get("port") if isinstance(api_data, dict) else None
+    log_level = api_data.get("log_level") if isinstance(api_data, dict) else None
+
+    enable_watcher = (
+        watcher_data.get("enabled") if isinstance(watcher_data, dict) else None
+    )
+    watcher_debounce_seconds = (
+        watcher_data.get("debounce_seconds") if isinstance(watcher_data, dict) else None
+    )
+
+    return Settings(
+        db_path=db_path,
+        run_history_path=run_history_path,
+        log_level=log_level if isinstance(log_level, str) and log_level else "INFO",
+        api_host=api_host if isinstance(api_host, str) and api_host else "127.0.0.1",
+        api_port=int(api_port) if isinstance(api_port, int | str) else 8000,
+        enable_watcher=bool(enable_watcher)
+        if isinstance(enable_watcher, bool)
+        else False,
+        watcher_debounce_seconds=(
+            float(watcher_debounce_seconds)
+            if isinstance(watcher_debounce_seconds, int | float | str)
+            else 0.4
+        ),
+    )
