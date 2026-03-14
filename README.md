@@ -225,3 +225,24 @@ Per `python scripts/reset_settings.py`:
 - `0`: esecuzione completata con successo.
 - `1`: errore operativo (es. `settings.toml.example` mancante).
 - `2`: input non valido per `--backup-name`.
+
+---
+
+## 10. Sotto-agent OpenCode
+
+Per mantenere le linee guida modulari, il repository separa la definizione degli agenti dalla documentazione delle best practices.
+
+- Agenti OpenCode:
+  - `.opencode/agents/react-best-practices.md`
+  - `.opencode/agents/python-best-practices.md`
+- Documentazione best practices (root):
+  - `best-practices-react.md`
+  - `best-practices-python.md`
+
+Ordine di priorita consigliato quando ci sono regole in conflitto:
+
+1. Istruzioni del task e regole repository (`AGENTS.md`).
+2. Convenzioni architetturali e codice esistente nella feature.
+3. Documenti best practices dedicati.
+
+Questa separazione rende gli agenti piu snelli e facilita l'aggiornamento indipendente delle linee guida React e Python.
