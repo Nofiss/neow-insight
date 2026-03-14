@@ -5,6 +5,7 @@ import type {
   LiveContext,
   Recommendation,
   RecommendationContext,
+  RunCharacters,
   RunCompleteness,
   RunDetail,
   RunStats,
@@ -87,6 +88,10 @@ export function fetchRuns(filters: RunsQuery = {}): Promise<RunsListResponse> {
     params.set('query', filters.query.trim())
   }
   return fetchJson<RunsListResponse>(`/runs?${params.toString()}`)
+}
+
+export function fetchRunCharacters(): Promise<RunCharacters> {
+  return fetchJson<RunCharacters>('/runs/characters')
 }
 
 export function fetchRunDetail(runId: string): Promise<RunDetail> {

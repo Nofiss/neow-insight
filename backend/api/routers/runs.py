@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
 from api.schemas import (
+    RunCharactersResponse,
     RunCompletenessResponse,
     RunCardChoiceResponse,
     RunDetailResponse,
@@ -18,6 +19,7 @@ from api.services.runs_history import (
     build_run_timeline,
     get_run_completeness,
     get_run_detail,
+    list_characters,
     list_runs,
     resolve_imported_at,
 )
@@ -69,6 +71,12 @@ def runs_list(
             for item in result.items
         ],
     )
+
+
+@router.get("/characters", response_model=RunCharactersResponse)
+def runs_characters(session: Session = Depends(get_session)) -> RunCharactersResponse:
+    items = list_characters(session)
+    return RunCharactersResponse(items=items)
 
 
 @router.get("/{run_id}", response_model=RunDetailResponse)

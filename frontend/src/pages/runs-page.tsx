@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useRuns } from '@/features/recommendation/hooks'
+import { useRunCharacters, useRuns } from '@/features/recommendation/hooks'
 import { formatIsoDate } from '@/features/recommendation/utils'
 
 type RunsWinFilter = 'all' | 'wins' | 'losses'
@@ -25,6 +25,8 @@ function readWinFilter(value: string | null): RunsWinFilter {
 
 export function RunsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const runCharacters = useRunCharacters()
+  const availableCharacters = runCharacters.data?.items ?? []
 
   const page = readPositiveInt(searchParams.get('page'), 1)
   const pageSize = readPositiveInt(searchParams.get('pageSize'), 20)
@@ -146,14 +148,30 @@ export function RunsPage() {
               >
                 Character
               </label>
-              <input
-                id="runs-character"
-                type="text"
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
-                placeholder="IRONCLAD"
-                value={draftCharacter}
-                onChange={(event) => setDraftCharacter(event.target.value)}
-              />
+              {availableCharacters.length > 0 ? (
+                <select
+                  id="runs-character"
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                  value={draftCharacter}
+                  onChange={(event) => setDraftCharacter(event.target.value)}
+                >
+                  <option value="">Tutti</option>
+                  {availableCharacters.map((character) => (
+                    <option key={character} value={character}>
+                      {character}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id="runs-character"
+                  type="text"
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                  placeholder="IRONCLAD"
+                  value={draftCharacter}
+                  onChange={(event) => setDraftCharacter(event.target.value)}
+                />
+              )}
             </div>
             <div className="space-y-2">
               <label

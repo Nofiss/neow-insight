@@ -688,6 +688,44 @@ def test_runs_list_endpoint_handles_blank_imported_at(client_and_engine):
     assert item["imported_at"] == "2026-02-01T10:00:00Z"
 
 
+def test_runs_characters_endpoint_returns_distinct_sorted_values(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Run(id="run-character-1", character="SILENT", win=True),
+                Run(id="run-character-2", character="IRONCLAD", win=False),
+                Run(id="run-character-3", character="SILENT", win=False),
+                Run(id="run-character-4", character="CHARACTER.NECROBINDER", win=True),
+                Run(id="run-character-5", character="  ", win=True),
+                Run(id="run-character-6", character=None, win=True),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/runs/characters")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {
+        "items": [
+            "CHARACTER.NECROBINDER",
+            "IRONCLAD",
+            "SILENT",
+        ]
+    }
+
+
+def test_runs_characters_endpoint_returns_empty_when_no_runs(client_and_engine):
+    client, _ = client_and_engine
+
+    response = client.get("/runs/characters")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {"items": []}
+
+
 def test_run_detail_endpoint_returns_full_payload(client_and_engine):
     client, engine = client_and_engine
     with Session(engine) as session:

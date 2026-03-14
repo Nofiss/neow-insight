@@ -98,6 +98,10 @@ export interface RunsListResponse {
   items: RunListItem[]
 }
 
+export interface RunCharacters {
+  items: string[]
+}
+
 export interface RunCardChoice {
   floor: number
   offered_cards: string[]

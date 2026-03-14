@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,6 +9,7 @@ import {
   useIngestStatus,
   useLiveContext,
   useRecommendation,
+  useRunCharacters,
 } from '@/features/recommendation/hooks'
 import { asPercent, parseCardsInput, REASON_LABELS } from '@/features/recommendation/utils'
 
@@ -34,8 +35,25 @@ export function RecommendationPage() {
   )
 
   const liveContext = useLiveContext()
+  const runCharacters = useRunCharacters()
+  const availableCharacters = runCharacters.data?.items ?? []
   const liveCards = liveContext.data?.offered_cards ?? []
   const liveIsUsable = Boolean(liveContext.data?.available && liveCards.length > 0)
+
+  useEffect(() => {
+    if (useLiveInput && liveIsUsable) {
+      return
+    }
+    if (availableCharacters.length === 0) {
+      return
+    }
+    if (availableCharacters.includes(characterInput)) {
+      return
+    }
+    const ironcladCharacter = availableCharacters.find((character) => character === 'IRONCLAD')
+    setCharacterInput(ironcladCharacter ?? availableCharacters[0])
+  }, [availableCharacters, characterInput, liveIsUsable, useLiveInput])
+
   const activeCards = useMemo(() => {
     if (useLiveInput && liveIsUsable) {
       return liveCards
@@ -111,15 +129,31 @@ export function RecommendationPage() {
               >
                 Character
               </label>
-              <input
-                id="context-character"
-                type="text"
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
-                placeholder="IRONCLAD"
-                value={characterInput}
-                onChange={(event) => setCharacterInput(event.target.value)}
-                disabled={useLiveInput && liveIsUsable}
-              />
+              {availableCharacters.length > 0 ? (
+                <select
+                  id="context-character"
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                  value={characterInput}
+                  onChange={(event) => setCharacterInput(event.target.value)}
+                  disabled={useLiveInput && liveIsUsable}
+                >
+                  {availableCharacters.map((character) => (
+                    <option key={character} value={character}>
+                      {character}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id="context-character"
+                  type="text"
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                  placeholder="IRONCLAD"
+                  value={characterInput}
+                  onChange={(event) => setCharacterInput(event.target.value)}
+                  disabled={useLiveInput && liveIsUsable}
+                />
+              )}
             </div>
             <div className="space-y-2">
               <label

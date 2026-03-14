@@ -99,6 +99,11 @@ vi.mock('@/features/recommendation/hooks', () => ({
       ],
     },
   }),
+  useRunCharacters: () => ({
+    isLoading: false,
+    isError: false,
+    data: { items: ['CHARACTER.NECROBINDER', 'IRONCLAD', 'SILENT', 'WATCHER'] },
+  }),
   useRunDetail: () => ({
     isLoading: false,
     isError: false,

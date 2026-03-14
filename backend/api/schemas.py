@@ -104,6 +104,10 @@ class RunsListResponse(BaseModel):
     items: list[RunListItemResponse]
 
 
+class RunCharactersResponse(BaseModel):
+    items: list[str]
+
+
 class RunDetailResponse(BaseModel):
     run_id: str
     seed: str | None

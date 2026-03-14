@@ -7,6 +7,7 @@ import {
   fetchLiveContext,
   fetchRecommendation,
   fetchRunCompleteness,
+  fetchRunCharacters,
   fetchRunDetail,
   fetchRuns,
   fetchRunTimeline,
@@ -80,6 +81,14 @@ export function useRunDetail(runId: string | null) {
     queryKey: ['run-detail', runId],
     queryFn: () => fetchRunDetail(runId as string),
     enabled: Boolean(runId),
+    refetchInterval: 15000,
+  })
+}
+
+export function useRunCharacters() {
+  return useQuery({
+    queryKey: ['run-characters'],
+    queryFn: fetchRunCharacters,
     refetchInterval: 15000,
   })
 }

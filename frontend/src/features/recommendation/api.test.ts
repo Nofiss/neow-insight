@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   fetchLiveContext,
   fetchRecommendation,
+  fetchRunCharacters,
   fetchRunCompleteness,
   fetchRunDetail,
   fetchRuns,
@@ -145,5 +146,19 @@ describe('runs history api', () => {
     await fetchRunCompleteness('run-1')
 
     expect(fetchMock).toHaveBeenCalledWith('/api/runs/run-1/completeness')
+  })
+
+  it('requests available characters endpoint', async () => {
+    const payload = { items: ['CHARACTER.NECROBINDER', 'IRONCLAD', 'SILENT'] }
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => payload,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await fetchRunCharacters()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/runs/characters')
+    expect(result).toEqual(payload)
   })
 })

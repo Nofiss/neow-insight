@@ -547,6 +547,20 @@ def list_runs(session: Session, filters: RunListFilters) -> RunListResult:
     )
 
 
+def list_characters(session: Session) -> list[str]:
+    rows = session.exec(
+        select(col(Run.character))
+        .where(col(Run.character).is_not(None))
+        .distinct()
+        .order_by(col(Run.character).asc())
+    ).all()
+    return [
+        character
+        for character in rows
+        if isinstance(character, str) and character.strip()
+    ]
+
+
 def _count_card_choices(session: Session, run_ids: list[str]) -> dict[str, int]:
     if not run_ids:
         return {}
