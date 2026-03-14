@@ -86,3 +86,71 @@ def test_parse_run_file_extracts_numeric_timestamp_fallback(tmp_path):
     parsed = parse_run_file(run_file)
 
     assert parsed.raw_timestamp == "12345"
+
+
+def test_parse_run_file_maps_sts2_fields_and_choices(tmp_path):
+    run_file = tmp_path / "sample-sts2.run"
+    payload = {
+        "ascension": 0,
+        "seed": 1772926310,
+        "win": True,
+        "start_time": "2026-03-14T14:20:00Z",
+        "players": [
+            {
+                "id": 1,
+                "character": "CHARACTER.NECROBINDER",
+                "relics": ["RELIC.STARTER"],
+            }
+        ],
+        "map_point_history": [
+            [
+                {
+                    "map_point_type": "monster",
+                    "player_stats": [
+                        {
+                            "card_choices": [
+                                {"card": {"id": "CARD.A"}, "was_picked": False},
+                                {"card": {"id": "CARD.B"}, "was_picked": True},
+                                {"card": {"id": "CARD.C"}, "was_picked": False},
+                            ],
+                            "relic_choices": [
+                                {"choice": "RELIC.FIRST", "was_picked": True}
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "map_point_type": "shop",
+                    "player_stats": [
+                        {
+                            "card_choices": [
+                                {"card": {"id": "CARD.SHOP_1"}, "was_picked": False},
+                                {"card": {"id": "CARD.SHOP_2"}, "was_picked": True},
+                            ]
+                        }
+                    ],
+                },
+            ]
+        ],
+    }
+    run_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    parsed = parse_run_file(run_file)
+
+    assert parsed.character == "CHARACTER.NECROBINDER"
+    assert parsed.ascension == 0
+    assert parsed.seed == "1772926310"
+    assert parsed.win is True
+    assert parsed.raw_timestamp == "2026-03-14T14:20:00Z"
+    assert len(parsed.card_choices) == 2
+    assert parsed.card_choices[0].floor == 1
+    assert parsed.card_choices[0].offered_cards == ["CARD.A", "CARD.B", "CARD.C"]
+    assert parsed.card_choices[0].picked_card == "CARD.B"
+    assert parsed.card_choices[0].is_shop is False
+    assert parsed.card_choices[1].floor == 2
+    assert parsed.card_choices[1].picked_card == "CARD.SHOP_2"
+    assert parsed.card_choices[1].is_shop is True
+    assert [r.relic_id for r in parsed.relic_history] == [
+        "RELIC.STARTER",
+        "RELIC.FIRST",
+    ]

@@ -171,23 +171,103 @@ function asFiniteNumber(value: unknown): number | null {
   return null
 }
 
+function mapPointEntries(rawPayload: Record<string, unknown>): Record<string, unknown>[] {
+  const history = rawPayload.map_point_history
+  if (!Array.isArray(history)) {
+    return []
+  }
+
+  const points: Record<string, unknown>[] = []
+  for (const act of history) {
+    if (!Array.isArray(act)) {
+      continue
+    }
+    for (const point of act) {
+      if (point && typeof point === 'object') {
+        points.push(point as Record<string, unknown>)
+      }
+    }
+  }
+  return points
+}
+
+function deriveFloorReachedFromMapHistory(rawPayload: Record<string, unknown>): number | null {
+  const points = mapPointEntries(rawPayload)
+  return points.length > 0 ? points.length : null
+}
+
+function deriveFinalGoldFromMapHistory(rawPayload: Record<string, unknown>): number | null {
+  let lastGold: number | null = null
+  for (const point of mapPointEntries(rawPayload)) {
+    const playerStats = point.player_stats
+    if (!Array.isArray(playerStats)) {
+      continue
+    }
+    for (const stats of playerStats) {
+      if (!stats || typeof stats !== 'object') {
+        continue
+      }
+      const candidate = asFiniteNumber((stats as Record<string, unknown>).current_gold)
+      if (candidate !== null) {
+        lastGold = candidate
+      }
+    }
+  }
+  return lastGold
+}
+
 function runQuickStats(rawPayload: Record<string, unknown>): {
   score: number | null
   floorReached: number | null
   finalGold: number | null
+  floorReachedSource: string
+  finalGoldSource: string
+  floorReachedDerived: boolean
+  finalGoldDerived: boolean
 } {
   const score = asFiniteNumber(rawPayload.score)
-  const floorReached = asFiniteNumber(rawPayload.floor_reached)
+  let floorReached = asFiniteNumber(rawPayload.floor_reached)
+  let floorReachedSource = 'floor_reached'
+  let floorReachedDerived = false
+  if (floorReached === null) {
+    floorReached = deriveFloorReachedFromMapHistory(rawPayload)
+    if (floorReached !== null) {
+      floorReachedSource = 'map_point_history length'
+      floorReachedDerived = true
+    }
+  }
 
   let finalGold = asFiniteNumber(rawPayload.gold)
+  let finalGoldSource = 'gold'
+  let finalGoldDerived = false
   if (finalGold === null && Array.isArray(rawPayload.gold_per_floor)) {
     const values = rawPayload.gold_per_floor
       .map((entry) => asFiniteNumber(entry))
       .filter((entry): entry is number => entry !== null)
     finalGold = values.length ? values[values.length - 1] : null
+    if (finalGold !== null) {
+      finalGoldSource = 'gold_per_floor[-1]'
+      finalGoldDerived = true
+    }
   }
 
-  return { score, floorReached, finalGold }
+  if (finalGold === null) {
+    finalGold = deriveFinalGoldFromMapHistory(rawPayload)
+    if (finalGold !== null) {
+      finalGoldSource = 'map_point_history[].player_stats[].current_gold'
+      finalGoldDerived = true
+    }
+  }
+
+  return {
+    score,
+    floorReached,
+    finalGold,
+    floorReachedSource,
+    finalGoldSource,
+    floorReachedDerived,
+    finalGoldDerived,
+  }
 }
 
 function asNumberLabel(value: number | null): string {
@@ -206,6 +286,17 @@ function metricAvailabilityStyle(value: number | null): string {
     return 'border-zinc-300 bg-zinc-100 text-zinc-700'
   }
   return 'border-emerald-300 bg-emerald-100 text-emerald-800'
+}
+
+function metricSourceLabel(isDerived: boolean): string {
+  return isDerived ? 'derived' : 'raw'
+}
+
+function metricSourceStyle(isDerived: boolean): string {
+  if (isDerived) {
+    return 'border-amber-300 bg-amber-100 text-amber-800'
+  }
+  return 'border-sky-300 bg-sky-100 text-sky-800'
 }
 
 function downloadRunJson(runId: string, payload: Record<string, unknown>): void {
@@ -244,6 +335,29 @@ function severityBadgeClass(severity: 'low' | 'medium' | 'high'): string {
   }
   if (severity === 'medium') {
     return 'border-amber-300 bg-amber-100 text-amber-800'
+  }
+  return 'border-emerald-300 bg-emerald-100 text-emerald-800'
+}
+
+function completenessInferenceLevel(
+  availableDirect: number,
+  availableInferred: number,
+): 'direct' | 'mixed' | 'inferred' {
+  if (availableInferred <= 0) {
+    return 'direct'
+  }
+  if (availableInferred >= availableDirect) {
+    return 'inferred'
+  }
+  return 'mixed'
+}
+
+function completenessInferenceBadgeClass(level: 'direct' | 'mixed' | 'inferred'): string {
+  if (level === 'inferred') {
+    return 'border-amber-300 bg-amber-100 text-amber-800'
+  }
+  if (level === 'mixed') {
+    return 'border-sky-300 bg-sky-100 text-sky-800'
   }
   return 'border-emerald-300 bg-emerald-100 text-emerald-800'
 }
@@ -339,6 +453,12 @@ export function RecommendationDashboard() {
   const selectedRunCompleteness = runCompleteness.data
   const completenessSeverity = selectedRunCompleteness
     ? missingSeverity(selectedRunCompleteness.missing)
+    : null
+  const completenessInference = selectedRunCompleteness
+    ? completenessInferenceLevel(
+        selectedRunCompleteness.available_direct,
+        selectedRunCompleteness.available_inferred,
+      )
     : null
   const hasQuickStats =
     selectedRunStats !== null &&
@@ -988,7 +1108,10 @@ export function RecommendationDashboard() {
                       <p className="text-sm font-medium text-zinc-800">
                         {asNumberLabel(selectedRunStats?.score ?? null)}
                       </p>
-                      <p className="text-[11px] text-zinc-500" title="Campo raw usato: score">
+                      <p
+                        className="text-[11px] text-zinc-500"
+                        title="Sorgente quick stat: score (raw)"
+                      >
                         source: score
                       </p>
                     </div>
@@ -997,20 +1120,29 @@ export function RecommendationDashboard() {
                         <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
                           Floor reached
                         </p>
-                        <Badge
-                          className={`text-[10px] uppercase ${metricAvailabilityStyle(selectedRunStats?.floorReached ?? null)}`}
-                        >
-                          {metricAvailabilityLabel(selectedRunStats?.floorReached ?? null)}
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <Badge
+                            className={`text-[10px] uppercase ${metricSourceStyle(selectedRunStats?.floorReachedDerived ?? false)}`}
+                            title="Sorgente valore: raw=campo presente nel payload, derived=valore inferito da map_point_history"
+                          >
+                            {metricSourceLabel(selectedRunStats?.floorReachedDerived ?? false)}
+                          </Badge>
+                          <Badge
+                            className={`text-[10px] uppercase ${metricAvailabilityStyle(selectedRunStats?.floorReached ?? null)}`}
+                            title="Disponibilita quick stat nel payload della run selezionata"
+                          >
+                            {metricAvailabilityLabel(selectedRunStats?.floorReached ?? null)}
+                          </Badge>
+                        </div>
                       </div>
                       <p className="text-sm font-medium text-zinc-800">
                         {asNumberLabel(selectedRunStats?.floorReached ?? null)}
                       </p>
                       <p
                         className="text-[11px] text-zinc-500"
-                        title="Campo raw usato: floor_reached"
+                        title={`Sorgente quick stat: ${selectedRunStats?.floorReachedSource ?? 'floor_reached'}`}
                       >
-                        source: floor_reached
+                        source: {selectedRunStats?.floorReachedSource ?? 'floor_reached'}
                       </p>
                     </div>
                     <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1">
@@ -1018,20 +1150,31 @@ export function RecommendationDashboard() {
                         <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
                           Gold finale
                         </p>
-                        <Badge
-                          className={`text-[10px] uppercase ${metricAvailabilityStyle(selectedRunStats?.finalGold ?? null)}`}
-                        >
-                          {metricAvailabilityLabel(selectedRunStats?.finalGold ?? null)}
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <Badge
+                            className={`text-[10px] uppercase ${metricSourceStyle(selectedRunStats?.finalGoldDerived ?? false)}`}
+                            title="Sorgente valore: raw=campo presente nel payload, derived=valore inferito da fallback STS2"
+                          >
+                            {metricSourceLabel(selectedRunStats?.finalGoldDerived ?? false)}
+                          </Badge>
+                          <Badge
+                            className={`text-[10px] uppercase ${metricAvailabilityStyle(selectedRunStats?.finalGold ?? null)}`}
+                            title="Disponibilita quick stat nel payload della run selezionata"
+                          >
+                            {metricAvailabilityLabel(selectedRunStats?.finalGold ?? null)}
+                          </Badge>
+                        </div>
                       </div>
                       <p className="text-sm font-medium text-zinc-800">
                         {asNumberLabel(selectedRunStats?.finalGold ?? null)}
                       </p>
                       <p
                         className="text-[11px] text-zinc-500"
-                        title="Campo raw usato: gold (fallback: gold_per_floor ultimo valore)"
+                        title={`Sorgente quick stat: ${selectedRunStats?.finalGoldSource ?? 'gold / gold_per_floor[-1] / current_gold'}`}
                       >
-                        source: gold {'->'} gold_per_floor[-1]
+                        source:{' '}
+                        {selectedRunStats?.finalGoldSource ??
+                          'gold / gold_per_floor[-1] / current_gold'}
                       </p>
                     </div>
                   </div>
@@ -1046,11 +1189,22 @@ export function RecommendationDashboard() {
                         Data completeness
                       </p>
                       {completenessSeverity ? (
-                        <Badge
-                          className={`text-[10px] uppercase ${severityBadgeClass(completenessSeverity)}`}
-                        >
-                          {completenessSeverity} impact
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          {completenessInference ? (
+                            <Badge
+                              className={`text-[10px] uppercase ${completenessInferenceBadgeClass(completenessInference)}`}
+                              title="Source indica quanto la completeness usa campi diretti o inferiti"
+                            >
+                              {completenessInference} source
+                            </Badge>
+                          ) : null}
+                          <Badge
+                            className={`text-[10px] uppercase ${severityBadgeClass(completenessSeverity)}`}
+                            title="Impact indica la gravita dei campi chiave mancanti"
+                          >
+                            {completenessSeverity} impact
+                          </Badge>
+                        </div>
                       ) : null}
                     </div>
                     {runCompleteness.isLoading ? (
@@ -1065,6 +1219,15 @@ export function RecommendationDashboard() {
                           campi chiave disponibili {selectedRunCompleteness.available} su{' '}
                           {selectedRunCompleteness.total}
                         </p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          diretti {selectedRunCompleteness.available_direct} • inferiti{' '}
+                          {selectedRunCompleteness.available_inferred}
+                        </p>
+                        {selectedRunCompleteness.inferred.length ? (
+                          <p className="mt-1 text-xs text-zinc-500">
+                            inferiti: {selectedRunCompleteness.inferred.join(', ')}
+                          </p>
+                        ) : null}
                         {selectedRunCompleteness.missing.length ? (
                           <p className="mt-1 text-xs text-zinc-500">
                             mancanti: {selectedRunCompleteness.missing.join(', ')}

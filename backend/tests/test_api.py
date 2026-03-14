@@ -660,6 +660,34 @@ def test_runs_list_endpoint_filters_by_character_and_win(client_and_engine):
     assert payload["items"][0]["run_id"] == "run-10"
 
 
+def test_runs_list_endpoint_handles_blank_imported_at(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-null-imported-at-list",
+                character="IRONCLAD",
+                ascension=1,
+                win=True,
+                raw_timestamp="2026-02-01T10:00:00Z",
+                imported_at="",
+                raw_payload={"run_id": "run-null-imported-at-list"},
+            )
+        )
+        session.commit()
+
+    response = client.get("/runs?page=1&page_size=20")
+
+    assert response.status_code == 200
+    payload = response.json()
+    item = next(
+        candidate
+        for candidate in payload["items"]
+        if candidate["run_id"] == "run-null-imported-at-list"
+    )
+    assert item["imported_at"] == "2026-02-01T10:00:00Z"
+
+
 def test_run_detail_endpoint_returns_full_payload(client_and_engine):
     client, engine = client_and_engine
     with Session(engine) as session:
@@ -691,6 +719,30 @@ def test_run_detail_endpoint_returns_full_payload(client_and_engine):
     assert payload["run_id"] == "run-detail"
     assert payload["raw_payload"]["some"] == "value"
     assert len(payload["card_choices"]) == 1
+
+
+def test_run_detail_endpoint_handles_blank_imported_at(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-null-imported-at-detail",
+                character="SILENT",
+                ascension=3,
+                win=False,
+                raw_timestamp="2026-02-02T10:00:00Z",
+                imported_at="",
+                raw_payload={"run_id": "run-null-imported-at-detail"},
+            )
+        )
+        session.commit()
+
+    response = client.get("/runs/run-null-imported-at-detail")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_id"] == "run-null-imported-at-detail"
+    assert payload["imported_at"] == "2026-02-02T10:00:00Z"
 
 
 def test_run_timeline_endpoint_returns_sorted_events(client_and_engine):
@@ -808,8 +860,15 @@ def test_run_completeness_endpoint_returns_field_coverage(client_and_engine):
     payload = response.json()
     assert payload["run_id"] == "run-complete"
     assert payload["available"] > 0
+    assert payload["available_direct"] > 0
+    assert payload["available_inferred"] >= 0
+    assert (
+        payload["available"]
+        == payload["available_direct"] + payload["available_inferred"]
+    )
     assert payload["total"] == 12
     assert "Campfire choices" in payload["missing"]
+    assert "Campfire choices" not in payload["inferred"]
 
 
 def test_run_completeness_endpoint_returns_404_for_missing_run(client_and_engine):
@@ -818,3 +877,208 @@ def test_run_completeness_endpoint_returns_404_for_missing_run(client_and_engine
     response = client.get("/runs/missing-run/completeness")
 
     assert response.status_code == 404
+
+
+def test_run_timeline_includes_sts2_mapped_events(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-sts2-timeline",
+                character="CHARACTER.NECROBINDER",
+                ascension=0,
+                win=True,
+                imported_at="2026-01-03T10:05:00Z",
+                raw_payload={
+                    "run_id": "run-sts2-timeline",
+                    "run_time": 1400,
+                    "map_point_history": [
+                        [
+                            {
+                                "map_point_type": "monster",
+                                "player_stats": [
+                                    {
+                                        "current_gold": 99,
+                                        "current_hp": 66,
+                                        "max_hp": 66,
+                                        "card_choices": [
+                                            {
+                                                "card": {"id": "CARD.A"},
+                                                "was_picked": False,
+                                            },
+                                            {
+                                                "card": {"id": "CARD.B"},
+                                                "was_picked": True,
+                                            },
+                                        ],
+                                        "potion_choices": [
+                                            {
+                                                "choice": "POTION.FIRE",
+                                                "was_picked": True,
+                                            }
+                                        ],
+                                    }
+                                ],
+                            },
+                            {
+                                "map_point_type": "rest_site",
+                                "player_stats": [
+                                    {
+                                        "current_gold": 120,
+                                        "current_hp": 60,
+                                        "max_hp": 66,
+                                        "rest_site_choices": ["SMITH"],
+                                    }
+                                ],
+                            },
+                            {
+                                "map_point_type": "unknown",
+                                "player_stats": [
+                                    {
+                                        "current_gold": 130,
+                                        "current_hp": 58,
+                                        "max_hp": 66,
+                                        "event_choices": [
+                                            {
+                                                "title": {
+                                                    "key": "EVENT.TEST",
+                                                    "table": "events",
+                                                }
+                                            }
+                                        ],
+                                    }
+                                ],
+                            },
+                            {
+                                "map_point_type": "boss",
+                                "player_stats": [
+                                    {
+                                        "current_gold": 200,
+                                        "current_hp": 40,
+                                        "max_hp": 66,
+                                        "potion_used": ["POTION.FIRE"],
+                                        "relic_choices": [
+                                            {
+                                                "choice": "RELIC.BOSS",
+                                                "was_picked": True,
+                                            }
+                                        ],
+                                    }
+                                ],
+                            },
+                        ]
+                    ],
+                },
+            )
+        )
+        session.commit()
+
+    response = client.get("/runs/run-sts2-timeline/timeline")
+
+    assert response.status_code == 200
+    payload = response.json()
+    kinds = [event["kind"] for event in payload["events"]]
+    assert "campfire" in kinds
+    assert "event" in kinds
+    assert "potion" in kinds
+    assert "boss_relic" in kinds
+
+
+def test_run_completeness_endpoint_maps_sts2_fields(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-sts2-completeness",
+                character="CHARACTER.NECROBINDER",
+                ascension=0,
+                win=True,
+                imported_at="2026-01-03T10:05:00Z",
+                raw_payload={
+                    "run_id": "run-sts2-completeness",
+                    "run_time": 1400,
+                    "map_point_history": [
+                        [
+                            {
+                                "map_point_type": "monster",
+                                "player_stats": [
+                                    {
+                                        "current_gold": 99,
+                                        "current_hp": 66,
+                                        "max_hp": 66,
+                                        "card_choices": [
+                                            {
+                                                "card": {"id": "CARD.A"},
+                                                "was_picked": True,
+                                            }
+                                        ],
+                                        "potion_choices": [
+                                            {
+                                                "choice": "POTION.FIRE",
+                                                "was_picked": True,
+                                            }
+                                        ],
+                                    }
+                                ],
+                            },
+                            {
+                                "map_point_type": "rest_site",
+                                "player_stats": [{"rest_site_choices": ["REST"]}],
+                            },
+                            {
+                                "map_point_type": "unknown",
+                                "player_stats": [
+                                    {
+                                        "event_choices": [
+                                            {
+                                                "title": {
+                                                    "key": "EVENT.TEST",
+                                                    "table": "events",
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ],
+                            },
+                            {
+                                "map_point_type": "boss",
+                                "player_stats": [
+                                    {
+                                        "relic_choices": [
+                                            {
+                                                "choice": "RELIC.BOSS",
+                                                "was_picked": True,
+                                            }
+                                        ]
+                                    }
+                                ],
+                            },
+                        ]
+                    ],
+                },
+            )
+        )
+        session.commit()
+
+    response = client.get("/runs/run-sts2-completeness/completeness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_id"] == "run-sts2-completeness"
+    assert (
+        payload["available"]
+        == payload["available_direct"] + payload["available_inferred"]
+    )
+    assert payload["available_inferred"] > 0
+    assert payload["total"] == 12
+    assert "Score" in payload["missing"]
+    assert "Campfire choices" not in payload["missing"]
+    assert "Event choices" not in payload["missing"]
+    assert "Card choices" not in payload["missing"]
+    assert "Boss relics" not in payload["missing"]
+    assert "Potions obtained" not in payload["missing"]
+    assert "Campfire choices" in payload["inferred"]
+    assert "Event choices" in payload["inferred"]
+    assert "Card choices" in payload["inferred"]
+    assert "Boss relics" in payload["inferred"]
+    assert "Potions obtained" in payload["inferred"]

@@ -60,8 +60,11 @@ class RunTimelineEvent:
 @dataclass(frozen=True)
 class RunCompleteness:
     available: int
+    available_direct: int
+    available_inferred: int
     total: int
     missing: list[str]
+    inferred: list[str]
 
 
 COMPLETENESS_FIELDS: tuple[tuple[str, str], ...] = (
@@ -85,6 +88,43 @@ def _parse_floor(value: Any) -> int | None:
         return value
     if isinstance(value, str) and value.isdigit():
         return int(value)
+    return None
+
+
+def _flatten_map_points(
+    raw_payload: dict[str, Any],
+) -> list[tuple[int, dict[str, Any]]]:
+    points: list[tuple[int, dict[str, Any]]] = []
+    payload = raw_payload.get("map_point_history")
+    if not isinstance(payload, list):
+        return points
+
+    floor = 0
+    for act in payload:
+        if not isinstance(act, list):
+            continue
+        for map_point in act:
+            if not isinstance(map_point, dict):
+                continue
+            floor += 1
+            points.append((floor, map_point))
+    return points
+
+
+def _iter_player_stats(map_point: dict[str, Any]) -> list[dict[str, Any]]:
+    payload = map_point.get("player_stats")
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def _extract_event_title(item: dict[str, Any]) -> str | None:
+    title = item.get("title")
+    if not isinstance(title, dict):
+        return None
+    key = title.get("key")
+    if isinstance(key, str) and key:
+        return key
     return None
 
 
@@ -204,6 +244,105 @@ def _events_from_raw_payload(raw_payload: dict[str, Any]) -> list[RunTimelineEve
     events.extend(_events_from_event_choices(raw_payload))
     events.extend(_events_from_potions_obtained(raw_payload))
     events.extend(_events_from_boss_relic_choices(raw_payload))
+    events.extend(_events_from_sts2_payload(raw_payload))
+    return events
+
+
+def _events_from_sts2_payload(raw_payload: dict[str, Any]) -> list[RunTimelineEvent]:
+    events: list[RunTimelineEvent] = []
+    for floor, map_point in _flatten_map_points(raw_payload):
+        map_point_type = map_point.get("map_point_type")
+        map_point_type_name = (
+            map_point_type if isinstance(map_point_type, str) else "unknown"
+        )
+
+        for stats in _iter_player_stats(map_point):
+            rest_site_choices = stats.get("rest_site_choices")
+            if isinstance(rest_site_choices, list):
+                for choice in rest_site_choices:
+                    if not isinstance(choice, str) or not choice:
+                        continue
+                    events.append(
+                        RunTimelineEvent(
+                            floor=floor,
+                            kind="campfire",
+                            summary=f"Campfire: {choice}",
+                            data={
+                                "choice": choice,
+                                "map_point_type": map_point_type_name,
+                            },
+                        )
+                    )
+
+            event_choices = stats.get("event_choices")
+            if isinstance(event_choices, list):
+                for choice in event_choices:
+                    if not isinstance(choice, dict):
+                        continue
+                    event_title = _extract_event_title(choice) or "Unknown Event"
+                    events.append(
+                        RunTimelineEvent(
+                            floor=floor,
+                            kind="event",
+                            summary=f"Event: {event_title}",
+                            data=choice,
+                        )
+                    )
+
+            potion_choices = stats.get("potion_choices")
+            if isinstance(potion_choices, list):
+                for choice in potion_choices:
+                    if not isinstance(choice, dict):
+                        continue
+                    potion_id = choice.get("choice")
+                    if (
+                        choice.get("was_picked") is True
+                        and isinstance(potion_id, str)
+                        and potion_id
+                    ):
+                        events.append(
+                            RunTimelineEvent(
+                                floor=floor,
+                                kind="potion",
+                                summary=f"Obtained potion {potion_id}",
+                                data=choice,
+                            )
+                        )
+
+            potion_used = stats.get("potion_used")
+            if isinstance(potion_used, list):
+                for potion_id in potion_used:
+                    if not isinstance(potion_id, str) or not potion_id:
+                        continue
+                    events.append(
+                        RunTimelineEvent(
+                            floor=floor,
+                            kind="potion",
+                            summary=f"Used potion {potion_id}",
+                            data={"potion_id": potion_id},
+                        )
+                    )
+
+            relic_choices = stats.get("relic_choices")
+            if isinstance(relic_choices, list) and map_point_type_name == "boss":
+                for relic_choice in relic_choices:
+                    if not isinstance(relic_choice, dict):
+                        continue
+                    relic_id = relic_choice.get("choice")
+                    if (
+                        relic_choice.get("was_picked") is True
+                        and isinstance(relic_id, str)
+                        and relic_id
+                    ):
+                        events.append(
+                            RunTimelineEvent(
+                                floor=floor,
+                                kind="boss_relic",
+                                summary=f"Boss relic pick: {relic_id}",
+                                data=relic_choice,
+                            )
+                        )
+
     return events
 
 
@@ -212,6 +351,16 @@ def _normalize_text(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def resolve_imported_at(raw_timestamp: str | None, imported_at: str | None) -> str:
+    normalized_imported_at = _normalize_text(imported_at)
+    if normalized_imported_at is not None:
+        return normalized_imported_at
+    normalized_raw_timestamp = _normalize_text(raw_timestamp)
+    if normalized_raw_timestamp is not None:
+        return normalized_raw_timestamp
+    return "1970-01-01T00:00:00Z"
 
 
 def _has_payload_value(value: Any) -> bool:
@@ -225,13 +374,110 @@ def _has_payload_value(value: Any) -> bool:
 
 
 def build_run_completeness(raw_payload: dict[str, Any]) -> RunCompleteness:
-    missing = [
-        label
-        for key, label in COMPLETENESS_FIELDS
-        if not _has_payload_value(raw_payload.get(key))
-    ]
+    derived_values = _derive_sts2_completeness_values(raw_payload)
+    missing: list[str] = []
+    inferred: list[str] = []
+    available_direct = 0
+    available_inferred = 0
+
+    for key, label in COMPLETENESS_FIELDS:
+        has_direct_value = _has_payload_value(raw_payload.get(key))
+        has_inferred_value = key in derived_values
+
+        if has_direct_value:
+            available_direct += 1
+            continue
+        if has_inferred_value:
+            available_inferred += 1
+            inferred.append(label)
+            continue
+        missing.append(label)
+
     total = len(COMPLETENESS_FIELDS)
-    return RunCompleteness(available=total - len(missing), total=total, missing=missing)
+    return RunCompleteness(
+        available=available_direct + available_inferred,
+        available_direct=available_direct,
+        available_inferred=available_inferred,
+        total=total,
+        missing=missing,
+        inferred=inferred,
+    )
+
+
+def _derive_sts2_completeness_values(raw_payload: dict[str, Any]) -> set[str]:
+    derived: set[str] = set()
+    map_points = _flatten_map_points(raw_payload)
+    if map_points:
+        derived.add("floor_reached")
+
+    if _has_payload_value(raw_payload.get("run_time")):
+        derived.add("playtime")
+
+    last_stats: dict[str, Any] | None = None
+    has_card_choices = False
+    has_event_choices = False
+    has_campfire_choices = False
+    has_potions_obtained = False
+    has_boss_relics = False
+    gold_samples: list[int] = []
+    max_hp_samples: list[int] = []
+    current_hp_samples: list[int] = []
+
+    for _, map_point in map_points:
+        map_point_type = map_point.get("map_point_type")
+        for stats in _iter_player_stats(map_point):
+            last_stats = stats
+            if _has_payload_value(stats.get("card_choices")):
+                has_card_choices = True
+            if _has_payload_value(stats.get("event_choices")):
+                has_event_choices = True
+            if _has_payload_value(stats.get("rest_site_choices")):
+                has_campfire_choices = True
+            if _has_payload_value(stats.get("potion_choices")):
+                has_potions_obtained = True
+
+            relic_choices = stats.get("relic_choices")
+            if isinstance(relic_choices, list) and map_point_type == "boss":
+                if any(
+                    isinstance(item, dict) and item.get("was_picked") is True
+                    for item in relic_choices
+                ):
+                    has_boss_relics = True
+
+            gold_value = _parse_floor(stats.get("current_gold"))
+            if gold_value is not None:
+                gold_samples.append(gold_value)
+
+            max_hp_value = _parse_floor(stats.get("max_hp"))
+            if max_hp_value is not None:
+                max_hp_samples.append(max_hp_value)
+
+            current_hp_value = _parse_floor(stats.get("current_hp"))
+            if current_hp_value is not None:
+                current_hp_samples.append(current_hp_value)
+
+    if gold_samples:
+        derived.add("gold")
+        derived.add("gold_per_floor")
+    if max_hp_samples:
+        derived.add("max_hp_per_floor")
+    if current_hp_samples:
+        derived.add("current_hp_per_floor")
+    if has_card_choices:
+        derived.add("card_choices")
+    if has_event_choices:
+        derived.add("event_choices")
+    if has_campfire_choices:
+        derived.add("campfire_choices")
+    if has_potions_obtained:
+        derived.add("potions_obtained")
+    if has_boss_relics:
+        derived.add("boss_relics")
+
+    if last_stats and _has_payload_value(last_stats.get("current_gold")):
+        derived.add("gold")
+
+    return derived
 
 
 def _base_runs_query(filters: RunListFilters):
@@ -284,7 +530,7 @@ def list_runs(session: Session, filters: RunListFilters) -> RunListResult:
             ascension=run.ascension,
             win=run.win,
             raw_timestamp=run.raw_timestamp,
-            imported_at=run.imported_at,
+            imported_at=resolve_imported_at(run.raw_timestamp, run.imported_at),
             source_file=run.source_file,
             card_choice_count=card_counts.get(run.id, 0),
             relic_count=relic_counts.get(run.id, 0),

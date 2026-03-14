@@ -26,6 +26,15 @@ def _ensure_runs_columns() -> None:
             if column_name in existing:
                 continue
             connection.execute(text(statement))
+        connection.execute(
+            text(
+                """
+                UPDATE runs
+                SET imported_at = COALESCE(NULLIF(TRIM(raw_timestamp), ''), datetime('now'))
+                WHERE imported_at IS NULL OR TRIM(imported_at) = ''
+                """
+            )
+        )
 
 
 def init_db() -> None:

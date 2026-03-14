@@ -49,6 +49,8 @@ def _parse_relic_history(values: Any) -> list[ParsedRelic]:
 
 def _parse_run_timestamp(payload: dict[str, Any]) -> str | None:
     timestamp_fields = [
+        "start_time",
+        "run_time",
         "timestamp",
         "local_time",
         "run_timestamp",
@@ -62,6 +64,143 @@ def _parse_run_timestamp(payload: dict[str, Any]) -> str | None:
         if isinstance(value, int | float):
             return str(value)
     return None
+
+
+def _parse_seed(payload: dict[str, Any]) -> str | None:
+    for field_name in ("seed_played", "seed"):
+        value = payload.get(field_name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, int | float):
+            return str(value)
+    return None
+
+
+def _parse_character(payload: dict[str, Any]) -> str | None:
+    legacy_character = payload.get("character_chosen")
+    if isinstance(legacy_character, str) and legacy_character.strip():
+        return legacy_character.strip()
+
+    players = payload.get("players")
+    if not isinstance(players, list):
+        return None
+    if not players:
+        return None
+    first_player = players[0]
+    if not isinstance(first_player, dict):
+        return None
+    character = first_player.get("character")
+    if isinstance(character, str) and character.strip():
+        return character.strip()
+    return None
+
+
+def _flatten_map_points(payload: dict[str, Any]) -> list[tuple[int, dict[str, Any]]]:
+    points: list[tuple[int, dict[str, Any]]] = []
+    history = payload.get("map_point_history")
+    if not isinstance(history, list):
+        return points
+
+    floor = 0
+    for act in history:
+        if not isinstance(act, list):
+            continue
+        for map_point in act:
+            if not isinstance(map_point, dict):
+                continue
+            floor += 1
+            points.append((floor, map_point))
+    return points
+
+
+def _parse_card_choices_sts2(payload: dict[str, Any]) -> list[ParsedCardChoice]:
+    parsed_choices: list[ParsedCardChoice] = []
+    for floor, map_point in _flatten_map_points(payload):
+        map_point_type = map_point.get("map_point_type")
+        is_shop = isinstance(map_point_type, str) and map_point_type == "shop"
+        player_stats = map_point.get("player_stats")
+        if not isinstance(player_stats, list):
+            continue
+
+        for stats in player_stats:
+            if not isinstance(stats, dict):
+                continue
+            card_choices = stats.get("card_choices")
+            if not isinstance(card_choices, list):
+                continue
+
+            offered_cards: list[str] = []
+            picked_card: str | None = None
+
+            for card_choice in card_choices:
+                if not isinstance(card_choice, dict):
+                    continue
+                card = card_choice.get("card")
+                if not isinstance(card, dict):
+                    continue
+                card_id = card.get("id")
+                if not isinstance(card_id, str) or not card_id:
+                    continue
+                offered_cards.append(card_id)
+                if card_choice.get("was_picked") is True:
+                    picked_card = card_id
+
+            if picked_card is None:
+                continue
+            parsed_choices.append(
+                ParsedCardChoice(
+                    floor=floor,
+                    offered_cards=offered_cards,
+                    picked_card=picked_card,
+                    is_shop=is_shop,
+                )
+            )
+    return parsed_choices
+
+
+def _parse_relic_history_sts2(payload: dict[str, Any]) -> list[ParsedRelic]:
+    relics: list[ParsedRelic] = []
+
+    players = payload.get("players")
+    if isinstance(players, list) and players:
+        first_player = players[0]
+        if isinstance(first_player, dict):
+            starting_relics = first_player.get("relics")
+            if isinstance(starting_relics, list):
+                for relic in starting_relics:
+                    if isinstance(relic, str) and relic:
+                        relics.append(ParsedRelic(relic_id=relic, floor=1))
+
+    for floor, map_point in _flatten_map_points(payload):
+        player_stats = map_point.get("player_stats")
+        if not isinstance(player_stats, list):
+            continue
+
+        for stats in player_stats:
+            if not isinstance(stats, dict):
+                continue
+            relic_choices = stats.get("relic_choices")
+            if not isinstance(relic_choices, list):
+                continue
+
+            for relic_choice in relic_choices:
+                if not isinstance(relic_choice, dict):
+                    continue
+                relic_id = relic_choice.get("choice")
+                if not isinstance(relic_id, str) or not relic_id:
+                    continue
+                if relic_choice.get("was_picked") is True:
+                    relics.append(ParsedRelic(relic_id=relic_id, floor=floor))
+
+    deduped: list[ParsedRelic] = []
+    seen: set[tuple[str, int]] = set()
+    for relic in relics:
+        key = (relic.relic_id, relic.floor)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(relic)
+    return deduped
 
 
 def parse_run_file(path: Path) -> ParsedRun:
@@ -83,16 +222,18 @@ def parse_run_file(path: Path) -> ParsedRun:
         digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()
         run_id = f"generated-{digest}"
 
-    character = payload.get("character_chosen")
-    if not isinstance(character, str):
-        character = None
+    character = _parse_character(payload)
 
     ascension = _parse_int(payload.get("ascension_level"))
-    seed = payload.get("seed_played")
-    if not isinstance(seed, str):
-        seed = None
+    if ascension is None:
+        ascension = _parse_int(payload.get("ascension"))
 
-    win = bool(payload.get("victory", False))
+    seed = _parse_seed(payload)
+
+    if "victory" in payload:
+        win = bool(payload.get("victory", False))
+    else:
+        win = bool(payload.get("win", False))
 
     card_choices_payload = payload.get("card_choices", [])
     card_choices: list[ParsedCardChoice] = []
@@ -114,6 +255,10 @@ def parse_run_file(path: Path) -> ParsedRun:
             )
 
     relic_history = _parse_relic_history(payload.get("relics_obtained", []))
+    if not card_choices:
+        card_choices = _parse_card_choices_sts2(payload)
+    if not relic_history:
+        relic_history = _parse_relic_history_sts2(payload)
     raw_timestamp = _parse_run_timestamp(payload)
 
     return ParsedRun(

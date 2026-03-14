@@ -19,6 +19,7 @@ from api.services.runs_history import (
     get_run_completeness,
     get_run_detail,
     list_runs,
+    resolve_imported_at,
 )
 from core.db import get_session
 
@@ -84,7 +85,10 @@ def run_detail(
         ascension=detail.run.ascension,
         win=detail.run.win,
         raw_timestamp=detail.run.raw_timestamp,
-        imported_at=detail.run.imported_at,
+        imported_at=resolve_imported_at(
+            detail.run.raw_timestamp,
+            detail.run.imported_at,
+        ),
         source_file=detail.run.source_file,
         card_choices=[
             RunCardChoiceResponse(
@@ -135,6 +139,9 @@ def run_completeness(
     return RunCompletenessResponse(
         run_id=run_id,
         available=result.available,
+        available_direct=result.available_direct,
+        available_inferred=result.available_inferred,
         total=result.total,
         missing=result.missing,
+        inferred=result.inferred,
     )

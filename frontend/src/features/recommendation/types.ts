@@ -139,6 +139,9 @@ export interface RunTimeline {
 export interface RunCompleteness {
   run_id: string
   available: number
+  available_direct: number
+  available_inferred: number
   total: number
   missing: string[]
+  inferred: string[]
 }

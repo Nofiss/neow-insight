@@ -133,5 +133,8 @@ class RunTimelineResponse(BaseModel):
 class RunCompletenessResponse(BaseModel):
     run_id: str
     available: int
+    available_direct: int
+    available_inferred: int
     total: int
     missing: list[str]
+    inferred: list[str]
