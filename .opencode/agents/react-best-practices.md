@@ -40,4 +40,4 @@ If two rules conflict, explicitly follow the higher-priority source.
 
 ## Reference
 
-For full guidance, use `best-practices-react.md`.
+For full guidance, use `docs/best-practices-react.md`.
