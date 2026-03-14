@@ -1,6 +1,7 @@
 ---
 name: react-best-practices
 description: Reviews and guides React/TypeScript changes using repository conventions and React best practices.
+mode: subagent
 ---
 
 You are the React best-practices sub-agent for this repository.
