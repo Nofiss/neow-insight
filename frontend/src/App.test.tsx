@@ -172,6 +172,9 @@ describe('App routing', () => {
 
     expect(screen.getAllByText('Recommendation').length).toBeGreaterThan(0)
     expect(screen.getByText('Raccomandazione corrente')).toBeInTheDocument()
+    expect(screen.getByText('Live run')).toBeInTheDocument()
+    expect(screen.getAllByText(/run run-42/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/source live/).length).toBeGreaterThan(0)
   })
 
   it('renders runs route', () => {

@@ -75,6 +75,11 @@ export function RecommendationPage() {
   const recommendation = useRecommendation(activeCards, activeRecommendationContext)
   const cardInsights = useCardInsights(activeCards)
   const ingestStatus = useIngestStatus()
+  const recommendationSource = useLiveInput && liveIsUsable ? 'live' : 'manuale'
+  const liveRunId = liveContext.data?.run_id
+  const liveCharacter = liveContext.data?.character
+  const liveAscension = liveContext.data?.ascension
+  const liveFloor = liveContext.data?.floor
   const recommendationReason = recommendation.data?.reason
   const reasonLabel = REASON_LABELS[recommendationReason ?? 'ok_global']
 
@@ -120,6 +125,27 @@ export function RecommendationPage() {
               </AlertDescription>
             </Alert>
           ) : null}
+
+          <div className="rounded-lg border border-zinc-300 bg-zinc-50 p-4">
+            <p className="text-sm font-medium text-zinc-700">Live run</p>
+            {liveContext.isLoading ? (
+              <Skeleton className="mt-3 h-14 w-full" />
+            ) : liveContext.data?.available ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Badge className="border-sky-300 bg-sky-100 text-sky-900">
+                  run {liveRunId ?? 'N/A'}
+                </Badge>
+                <Badge className="border-zinc-300 bg-white text-zinc-700">
+                  {liveCharacter ?? 'N/A'} A{liveAscension ?? 0} F{liveFloor ?? 0}
+                </Badge>
+                <Badge className="border-zinc-300 bg-white text-zinc-700">
+                  source {recommendationSource}
+                </Badge>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-zinc-500">Nessuna run live disponibile.</p>
+            )}
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-2">
@@ -239,6 +265,14 @@ export function RecommendationPage() {
                 {recommendation.data?.best_pick ?? 'N/A'}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
+                <Badge className="border-sky-300 bg-sky-100 text-sky-900">
+                  source {recommendationSource}
+                </Badge>
+                {recommendationSource === 'live' ? (
+                  <Badge className="border-sky-300 bg-sky-100 text-sky-900">
+                    run {liveRunId ?? 'N/A'}
+                  </Badge>
+                ) : null}
                 <Badge className="border-zinc-300 bg-zinc-100 text-zinc-800">
                   sample {recommendation.data?.sample_size ?? 0}
                 </Badge>

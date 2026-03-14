@@ -535,26 +535,45 @@ def test_live_context_endpoint_returns_unavailable_when_no_card_choices(
     }
 
 
-def test_live_context_endpoint_returns_latest_card_choice(client_and_engine):
+def test_live_context_endpoint_returns_most_recent_imported_run(client_and_engine):
     client, engine = client_and_engine
     with Session(engine) as session:
         session.add_all(
             [
-                Run(id="run-1", character="IRONCLAD", ascension=5, win=False),
-                Run(id="run-2", character="SILENT", ascension=10, win=True),
+                Run(
+                    id="run-older",
+                    character="IRONCLAD",
+                    ascension=5,
+                    win=False,
+                    imported_at="2026-01-01T10:00:00Z",
+                ),
+                Run(
+                    id="run-current",
+                    character="SILENT",
+                    ascension=10,
+                    win=True,
+                    imported_at="2026-01-02T10:00:00Z",
+                ),
             ]
         )
         session.add_all(
             [
                 CardChoice(
-                    run_id="run-1",
+                    run_id="run-current",
+                    floor=4,
+                    offered_cards=["CARD.X", "CARD.Y"],
+                    picked_card="CARD.X",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-older",
                     floor=3,
                     offered_cards=["CARD.A", "CARD.B"],
                     picked_card="CARD.A",
                     is_shop=False,
                 ),
                 CardChoice(
-                    run_id="run-2",
+                    run_id="run-current",
                     floor=7,
                     offered_cards=["CARD.C", "CARD.D"],
                     picked_card="CARD.D",
@@ -569,12 +588,68 @@ def test_live_context_endpoint_returns_latest_card_choice(client_and_engine):
     assert response.status_code == 200
     payload = response.json()
     assert payload["available"] is True
-    assert payload["run_id"] == "run-2"
+    assert payload["run_id"] == "run-current"
     assert payload["character"] == "SILENT"
     assert payload["ascension"] == 10
     assert payload["floor"] == 7
     assert payload["offered_cards"] == ["CARD.C", "CARD.D"]
     assert payload["picked_card"] == "CARD.D"
+
+
+def test_live_context_endpoint_tiebreaks_with_run_id_when_recency_is_equal(
+    client_and_engine,
+):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Run(
+                    id="run-a",
+                    character="IRONCLAD",
+                    ascension=2,
+                    win=False,
+                    imported_at="2026-01-03T10:00:00Z",
+                ),
+                Run(
+                    id="run-b",
+                    character="WATCHER",
+                    ascension=3,
+                    win=True,
+                    imported_at="2026-01-03T10:00:00Z",
+                ),
+            ]
+        )
+        session.add_all(
+            [
+                CardChoice(
+                    run_id="run-a",
+                    floor=2,
+                    offered_cards=["CARD.A1", "CARD.A2"],
+                    picked_card="CARD.A1",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-b",
+                    floor=5,
+                    offered_cards=["CARD.B1", "CARD.B2"],
+                    picked_card="CARD.B2",
+                    is_shop=False,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/live/context")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["run_id"] == "run-b"
+    assert payload["character"] == "WATCHER"
+    assert payload["ascension"] == 3
+    assert payload["floor"] == 5
+    assert payload["offered_cards"] == ["CARD.B1", "CARD.B2"]
+    assert payload["picked_card"] == "CARD.B2"
 
 
 def test_runs_list_endpoint_returns_paginated_runs(client_and_engine):
