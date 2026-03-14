@@ -5,7 +5,7 @@ log_level = "INFO"
 
 [storage]
 db_path = "data/neow_insight.db"
-run_history_path = "C:/Users/<utente>/AppData/Roaming/SlayTheSpire2/steam/76561198110552884/profile1/saves/history"
+saves_path = "C:/Users/<utente>/AppData/Roaming/SlayTheSpire2/steam/76561198110552884/profile1/saves"
 
 [watcher]
 enabled = true

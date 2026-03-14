@@ -6,7 +6,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from core.db.models import CardChoice, Run
-from core.ingestion.importer import MAX_RECENT_ISSUES, import_history
+from core.ingestion.importer import MAX_RECENT_ISSUES, import_history, import_run_file
 
 
 def _write_run(path, *, run_id: str, victory: bool, picked: str) -> None:
@@ -125,3 +125,36 @@ def test_import_history_keeps_only_latest_recent_issues(tmp_path):
     assert len(report.recent_issues) == MAX_RECENT_ISSUES
     assert report.recent_issues[0].file_path.endswith("broken-05.run")
     assert report.recent_issues[-1].file_path.endswith("broken-24.run")
+
+
+def test_import_run_file_supports_current_run_save(tmp_path):
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    saves_dir = tmp_path / "saves"
+    saves_dir.mkdir(parents=True, exist_ok=True)
+    current_run_file = saves_dir / "current_run.save"
+
+    _write_run(
+        current_run_file,
+        run_id="run-current",
+        victory=True,
+        picked="CARD.CLEAVE",
+    )
+
+    with Session(engine) as session:
+        report = import_run_file(current_run_file, session)
+
+        assert report.scanned == 1
+        assert report.imported == 1
+        assert report.updated == 0
+        assert report.parse_errors == 0
+
+        run = session.get(Run, "run-current")
+        assert run is not None
+        assert run.source_file is not None
+        assert run.source_file.endswith("current_run.save")

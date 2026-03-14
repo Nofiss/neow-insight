@@ -16,7 +16,7 @@ from api.state import apply_import_report
 from core.config import get_settings
 from core.db import init_db
 from core.db.session import engine
-from core.ingestion.importer import import_history, import_run_file
+from core.ingestion.importer import ImportReport, import_history, import_run_file
 from core.watcher import start_watcher
 from sqlmodel import Session
 
@@ -28,23 +28,27 @@ settings = get_settings()
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     observer = None
     init_db()
-    if settings.run_history_path.exists():
-        with Session(engine) as session:
-            report = import_history(settings.run_history_path, session)
-            apply_import_report(report)
+    with Session(engine) as session:
+        startup_report = ImportReport()
+        if settings.run_history_path.exists():
+            startup_report.absorb(import_history(settings.run_history_path, session))
+        if settings.current_run_path.exists():
+            startup_report.absorb(import_run_file(settings.current_run_path, session))
+        apply_import_report(startup_report)
 
-        if settings.enable_watcher:
+    if settings.enable_watcher:
 
-            def on_change(_path: Path) -> None:
-                with Session(engine) as watcher_session:
-                    watcher_report = import_run_file(_path, watcher_session)
-                    apply_import_report(watcher_report)
+        def on_change(_path: Path) -> None:
+            with Session(engine) as watcher_session:
+                watcher_report = import_run_file(_path, watcher_session)
+                apply_import_report(watcher_report)
 
-            observer = start_watcher(
-                settings.run_history_path,
-                on_change=on_change,
-                debounce_seconds=settings.watcher_debounce_seconds,
-            )
+        observer = start_watcher(
+            settings.run_history_path,
+            settings.current_run_path,
+            on_change=on_change,
+            debounce_seconds=settings.watcher_debounce_seconds,
+        )
     yield
     if observer is not None:
         observer.stop()

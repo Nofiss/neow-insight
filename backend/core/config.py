@@ -9,7 +9,9 @@ import tomllib
 @dataclass(frozen=True)
 class Settings:
     db_path: Path
+    saves_path: Path
     run_history_path: Path
+    current_run_path: Path
     log_level: str
     api_host: str
     api_port: int
@@ -17,7 +19,7 @@ class Settings:
     watcher_debounce_seconds: float
 
 
-def _default_run_history_path() -> Path:
+def _default_saves_path() -> Path:
     if Path.home().drive:
         return (
             Path.home()
@@ -28,9 +30,39 @@ def _default_run_history_path() -> Path:
             / "76561198110552884"
             / "profile1"
             / "saves"
-            / "history"
         )
-    return Path.home() / "SlayTheSpire2" / "history"
+    return Path.home() / "SlayTheSpire2" / "saves"
+
+
+def _resolve_storage_paths(
+    storage_data: dict, workspace_root: Path, default_saves_path: Path
+) -> tuple[Path, Path, Path]:
+    saves_value = (
+        storage_data.get("saves_path") if isinstance(storage_data, dict) else None
+    )
+    history_value = (
+        storage_data.get("run_history_path") if isinstance(storage_data, dict) else None
+    )
+
+    if isinstance(saves_value, str) and saves_value.strip():
+        saves_path = _resolve_path(saves_value, workspace_root, default_saves_path)
+    elif isinstance(history_value, str) and history_value.strip():
+        run_history_path = _resolve_path(
+            history_value, workspace_root, default_saves_path / "history"
+        )
+        saves_path = run_history_path.parent
+    else:
+        saves_path = default_saves_path
+
+    run_history_path = _resolve_path(
+        history_value
+        if isinstance(history_value, str) and history_value.strip()
+        else None,
+        workspace_root,
+        saves_path / "history",
+    )
+    current_run_path = saves_path / "current_run.save"
+    return saves_path, run_history_path, current_run_path
 
 
 def _load_settings_file(path: Path) -> dict:
@@ -68,19 +100,17 @@ def get_settings() -> Settings:
     watcher_data = file_data.get("watcher", {}) if isinstance(file_data, dict) else {}
 
     default_db_path = workspace_root / "data" / "neow_insight.db"
-    default_run_history = _default_run_history_path()
+    default_saves_path = _default_saves_path()
 
     db_path = _resolve_path(
         storage_data.get("db_path") if isinstance(storage_data, dict) else None,
         workspace_root,
         default_db_path,
     )
-    run_history_path = _resolve_path(
-        storage_data.get("run_history_path")
-        if isinstance(storage_data, dict)
-        else None,
+    saves_path, run_history_path, current_run_path = _resolve_storage_paths(
+        storage_data if isinstance(storage_data, dict) else {},
         workspace_root,
-        default_run_history,
+        default_saves_path,
     )
 
     api_host = api_data.get("host") if isinstance(api_data, dict) else None
@@ -96,7 +126,9 @@ def get_settings() -> Settings:
 
     return Settings(
         db_path=db_path,
+        saves_path=saves_path,
         run_history_path=run_history_path,
+        current_run_path=current_run_path,
         log_level=log_level if isinstance(log_level, str) and log_level else "INFO",
         api_host=api_host if isinstance(api_host, str) and api_host else "127.0.0.1",
         api_port=int(api_port) if isinstance(api_port, int | str) else 8000,

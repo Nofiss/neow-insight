@@ -25,12 +25,26 @@ def main() -> None:
     settings = get_settings()
     init_db()
 
-    if not settings.run_history_path.exists():
-        print(f"history path not found: {settings.run_history_path}")
+    history_exists = settings.run_history_path.exists()
+    current_exists = settings.current_run_path.exists()
+    if not history_exists and not current_exists:
+        print(
+            "no watch target found "
+            f"history={settings.run_history_path} "
+            f"current={settings.current_run_path}"
+        )
         sys.exit(1)
 
-    observer = start_watcher(settings.run_history_path, process_path)
-    print(f"watching {settings.run_history_path}")
+    observer = start_watcher(
+        settings.run_history_path,
+        settings.current_run_path,
+        process_path,
+    )
+    print(
+        "watching "
+        f"history={settings.run_history_path} "
+        f"current={settings.current_run_path}"
+    )
 
     def stop_handler(_signum: int, _frame: object) -> None:
         observer.stop()

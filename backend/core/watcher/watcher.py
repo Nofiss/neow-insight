@@ -11,11 +11,23 @@ from watchdog.observers.api import BaseObserver
 
 class DebouncedRunFileHandler(FileSystemEventHandler):
     def __init__(
-        self, on_change: Callable[[Path], None], debounce_seconds: float = 0.4
+        self,
+        history_path: Path,
+        current_run_path: Path,
+        on_change: Callable[[Path], None],
+        debounce_seconds: float = 0.4,
     ):
+        self.history_path = history_path.resolve(strict=False)
+        self.current_run_path = current_run_path.resolve(strict=False)
         self.on_change = on_change
         self.debounce_seconds = debounce_seconds
         self._last_processed: dict[Path, float] = {}
+
+    def _is_supported_run_file(self, path: Path) -> bool:
+        resolved = path.resolve(strict=False)
+        if resolved == self.current_run_path:
+            return True
+        return resolved.parent == self.history_path and resolved.suffix == ".run"
 
     def _handle_event(self, event: FileSystemEvent) -> None:
         if event.is_directory:
@@ -24,16 +36,18 @@ class DebouncedRunFileHandler(FileSystemEventHandler):
         if isinstance(src_path, bytes):
             src_path = src_path.decode(errors="ignore")
         path = Path(src_path)
-        if path.suffix != ".run":
+        if not self._is_supported_run_file(path):
             return
 
+        resolved_path = path.resolve(strict=False)
+
         now = time.time()
-        previous = self._last_processed.get(path)
+        previous = self._last_processed.get(resolved_path)
         if previous is not None and now - previous < self.debounce_seconds:
             return
 
-        self._last_processed[path] = now
-        self.on_change(path)
+        self._last_processed[resolved_path] = now
+        self.on_change(resolved_path)
 
     def on_modified(self, event: FileSystemEvent) -> None:
         self._handle_event(event)
@@ -43,12 +57,24 @@ class DebouncedRunFileHandler(FileSystemEventHandler):
 
 
 def start_watcher(
-    path: Path, on_change: Callable[[Path], None], debounce_seconds: float = 0.4
+    history_path: Path,
+    current_run_path: Path,
+    on_change: Callable[[Path], None],
+    debounce_seconds: float = 0.4,
 ) -> BaseObserver:
     observer = Observer()
     handler = DebouncedRunFileHandler(
-        on_change=on_change, debounce_seconds=debounce_seconds
+        history_path=history_path,
+        current_run_path=current_run_path,
+        on_change=on_change,
+        debounce_seconds=debounce_seconds,
     )
-    observer.schedule(handler, str(path), recursive=False)
+    watch_roots = {
+        history_path.resolve(strict=False),
+        current_run_path.parent.resolve(strict=False),
+    }
+    for root in watch_roots:
+        if root.exists() and root.is_dir():
+            observer.schedule(handler, str(root), recursive=False)
     observer.start()
     return observer
