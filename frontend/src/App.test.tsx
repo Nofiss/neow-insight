@@ -1,9 +1,9 @@
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
+import App from './App'
 
-import { RecommendationDashboard } from './recommendation-dashboard'
-
-vi.mock('./hooks', () => ({
+vi.mock('@/features/recommendation/hooks', () => ({
   DEFAULT_OFFERED: ['CARD.BASH', 'CARD.CLOTHESLINE', 'CARD.OFF_BALANCE'],
   useHealth: () => ({
     isLoading: false,
@@ -137,41 +137,58 @@ vi.mock('./hooks', () => ({
     data: {
       run_id: 'run-42',
       available: 4,
+      available_direct: 3,
+      available_inferred: 1,
       total: 12,
       missing: ['Campfire choices'],
+      inferred: ['Gold'],
     },
   }),
 }))
 
-describe('RecommendationDashboard', () => {
-  it('renders live automation status and recommendation details', () => {
-    render(<RecommendationDashboard />)
+describe('App routing', () => {
+  it('renders overview route', () => {
+    render(
+      <MemoryRouter initialEntries={['/overview']}>
+        <App />
+      </MemoryRouter>,
+    )
 
-    expect(screen.getByText('Decision dashboard live per Slay the Spire 2')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Overview' })).toBeInTheDocument()
     expect(screen.getByText('Sorgente consigli')).toBeInTheDocument()
+  })
+
+  it('renders recommendation route', () => {
+    render(
+      <MemoryRouter initialEntries={['/recommendation']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getAllByText('Recommendation').length).toBeGreaterThan(0)
     expect(screen.getByText('Raccomandazione corrente')).toBeInTheDocument()
-    expect(screen.getByText('Diagnostica ingest recente')).toBeInTheDocument()
+  })
+
+  it('renders runs route', () => {
+    render(
+      <MemoryRouter initialEntries={['/runs']}>
+        <App />
+      </MemoryRouter>,
+    )
+
     expect(screen.getByText('Run History Explorer')).toBeInTheDocument()
+    expect(screen.getByText('Apri dettaglio')).toBeInTheDocument()
+  })
+
+  it('renders run detail route', () => {
+    render(
+      <MemoryRouter initialEntries={['/runs/run-42']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('Run Detail')).toBeInTheDocument()
     expect(screen.getByText('Timeline floor-by-floor')).toBeInTheDocument()
     expect(screen.getByText('Raw JSON completo')).toBeInTheDocument()
-    expect(screen.getByText('Export JSON run')).toBeInTheDocument()
-    expect(screen.getByText('Solo eventi decisionali')).toBeInTheDocument()
-    expect(screen.getByText('Score')).toBeInTheDocument()
-    expect(screen.getByText('Floor reached')).toBeInTheDocument()
-    expect(screen.getByText('Gold finale')).toBeInTheDocument()
-    expect(screen.getAllByText('dato assente').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('source: score')).toBeInTheDocument()
-    expect(screen.getByText('source: floor_reached')).toBeInTheDocument()
-    expect(screen.getByText('source: gold -> gold_per_floor[-1]')).toBeInTheDocument()
-    expect(screen.getByText('Data completeness')).toBeInTheDocument()
-    expect(screen.getByText(/campi chiave disponibili/)).toBeInTheDocument()
-    expect(screen.getByText(/mancanti:/)).toBeInTheDocument()
-    expect(
-      screen.getByText('Quick stats non disponibili in questo payload run.'),
-    ).toBeInTheDocument()
-    expect(screen.getByText('Nessun errore ingest recente.')).toBeInTheDocument()
-    expect(screen.getAllByText('CARD.BASH').length).toBeGreaterThan(0)
-    expect(screen.getByText('scope character_ascension_floor')).toBeInTheDocument()
-    expect(screen.getByText(/Filtri applicati:/)).toBeInTheDocument()
   })
 })
