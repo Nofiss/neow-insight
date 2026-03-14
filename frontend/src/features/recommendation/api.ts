@@ -5,7 +5,11 @@ import type {
   LiveContext,
   Recommendation,
   RecommendationContext,
+  RunCompleteness,
+  RunDetail,
   RunStats,
+  RunsListResponse,
+  RunTimeline,
 } from './types'
 
 const API_BASE = '/api'
@@ -55,4 +59,44 @@ export function fetchCardInsights(cards: string[]): Promise<CardInsights> {
 
 export function fetchLiveContext(): Promise<LiveContext> {
   return fetchJson<LiveContext>('/live/context')
+}
+
+export interface RunsQuery {
+  page?: number
+  pageSize?: number
+  character?: string
+  ascension?: number
+  win?: boolean
+  query?: string
+}
+
+export function fetchRuns(filters: RunsQuery = {}): Promise<RunsListResponse> {
+  const params = new URLSearchParams()
+  params.set('page', String(filters.page ?? 1))
+  params.set('page_size', String(filters.pageSize ?? 20))
+  if (filters.character?.trim()) {
+    params.set('character', filters.character.trim().toUpperCase())
+  }
+  if (typeof filters.ascension === 'number') {
+    params.set('ascension', String(filters.ascension))
+  }
+  if (typeof filters.win === 'boolean') {
+    params.set('win', String(filters.win))
+  }
+  if (filters.query?.trim()) {
+    params.set('query', filters.query.trim())
+  }
+  return fetchJson<RunsListResponse>(`/runs?${params.toString()}`)
+}
+
+export function fetchRunDetail(runId: string): Promise<RunDetail> {
+  return fetchJson<RunDetail>(`/runs/${encodeURIComponent(runId)}`)
+}
+
+export function fetchRunTimeline(runId: string): Promise<RunTimeline> {
+  return fetchJson<RunTimeline>(`/runs/${encodeURIComponent(runId)}/timeline`)
+}
+
+export function fetchRunCompleteness(runId: string): Promise<RunCompleteness> {
+  return fetchJson<RunCompleteness>(`/runs/${encodeURIComponent(runId)}/completeness`)
 }

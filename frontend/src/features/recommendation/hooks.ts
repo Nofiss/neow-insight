@@ -6,7 +6,12 @@ import {
   fetchIngestStatus,
   fetchLiveContext,
   fetchRecommendation,
+  fetchRunCompleteness,
+  fetchRunDetail,
+  fetchRuns,
+  fetchRunTimeline,
   fetchStats,
+  type RunsQuery,
 } from './api'
 import type { RecommendationContext } from './types'
 
@@ -59,6 +64,41 @@ export function useLiveContext() {
     queryKey: ['live-context'],
     queryFn: fetchLiveContext,
     refetchInterval: 3000,
+  })
+}
+
+export function useRuns(query: RunsQuery) {
+  return useQuery({
+    queryKey: ['runs-list', query],
+    queryFn: () => fetchRuns(query),
+    refetchInterval: 15000,
+  })
+}
+
+export function useRunDetail(runId: string | null) {
+  return useQuery({
+    queryKey: ['run-detail', runId],
+    queryFn: () => fetchRunDetail(runId as string),
+    enabled: Boolean(runId),
+    refetchInterval: 15000,
+  })
+}
+
+export function useRunTimeline(runId: string | null) {
+  return useQuery({
+    queryKey: ['run-timeline', runId],
+    queryFn: () => fetchRunTimeline(runId as string),
+    enabled: Boolean(runId),
+    refetchInterval: 15000,
+  })
+}
+
+export function useRunCompleteness(runId: string | null) {
+  return useQuery({
+    queryKey: ['run-completeness', runId],
+    queryFn: () => fetchRunCompleteness(runId as string),
+    enabled: Boolean(runId),
+    refetchInterval: 15000,
   })
 }
 

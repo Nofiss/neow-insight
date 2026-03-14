@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { fetchLiveContext, fetchRecommendation } from './api'
+import {
+  fetchLiveContext,
+  fetchRecommendation,
+  fetchRunCompleteness,
+  fetchRunDetail,
+  fetchRuns,
+  fetchRunTimeline,
+} from './api'
 
 describe('fetchRecommendation', () => {
   afterEach(() => {
@@ -75,5 +82,68 @@ describe('fetchLiveContext', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/live/context')
     expect(result).toEqual(payload)
+  })
+})
+
+describe('runs history api', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('builds runs query with filters', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ page: 1, page_size: 20, total: 0, total_pages: 1, items: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchRuns({
+      page: 2,
+      pageSize: 10,
+      character: 'ironclad',
+      ascension: 12,
+      win: true,
+      query: 'run-1',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/runs?page=2&page_size=10&character=IRONCLAD&ascension=12&win=true&query=run-1',
+    )
+  })
+
+  it('requests run detail endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ run_id: 'run-1' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchRunDetail('run-1')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/runs/run-1')
+  })
+
+  it('requests run timeline endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ run_id: 'run-1', events: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchRunTimeline('run-1')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/runs/run-1/timeline')
+  })
+
+  it('requests run completeness endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ run_id: 'run-1', available: 5, total: 12, missing: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchRunCompleteness('run-1')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/runs/run-1/completeness')
   })
 })

@@ -8,7 +8,7 @@ from api.services.analytics import compute_card_insights, compute_runs_stats
 from core.db import get_session
 
 
-router = APIRouter(prefix="/runs", tags=["runs"])
+router = APIRouter(prefix="/runs", tags=["runs-stats"])
 
 
 @router.get("/stats", response_model=RunsStatsResponse)

@@ -10,6 +10,7 @@ from api.routers.health import router as health_router
 from api.routers.ingest import router as ingest_router
 from api.routers.live import router as live_router
 from api.routers.recommendation import router as recommendation_router
+from api.routers.runs import router as runs_router
 from api.routers.stats import router as stats_router
 from api.state import apply_import_report
 from core.config import get_settings
@@ -53,6 +54,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Neow Insight API", version="0.1.0", lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(stats_router)
+app.include_router(runs_router)
 app.include_router(recommendation_router)
 app.include_router(ingest_router)
 app.include_router(live_router)

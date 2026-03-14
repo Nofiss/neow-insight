@@ -76,3 +76,69 @@ export interface LiveContext {
   offered_cards: string[]
   picked_card: string | null
 }
+
+export interface RunListItem {
+  run_id: string
+  seed: string | null
+  character: string | null
+  ascension: number | null
+  win: boolean
+  raw_timestamp: string | null
+  imported_at: string
+  source_file: string | null
+  card_choice_count: number
+  relic_count: number
+}
+
+export interface RunsListResponse {
+  page: number
+  page_size: number
+  total: number
+  total_pages: number
+  items: RunListItem[]
+}
+
+export interface RunCardChoice {
+  floor: number
+  offered_cards: string[]
+  picked_card: string
+  is_shop: boolean
+}
+
+export interface RunRelic {
+  relic_id: string
+  floor: number
+}
+
+export interface RunDetail {
+  run_id: string
+  seed: string | null
+  character: string | null
+  ascension: number | null
+  win: boolean
+  raw_timestamp: string | null
+  imported_at: string
+  source_file: string | null
+  card_choices: RunCardChoice[]
+  relic_history: RunRelic[]
+  raw_payload: Record<string, unknown>
+}
+
+export interface RunTimelineEvent {
+  floor: number
+  kind: string
+  summary: string
+  data: Record<string, unknown>
+}
+
+export interface RunTimeline {
+  run_id: string
+  events: RunTimelineEvent[]
+}
+
+export interface RunCompleteness {
+  run_id: string
+  available: number
+  total: number
+  missing: string[]
+}

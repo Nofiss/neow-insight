@@ -75,6 +75,72 @@ vi.mock('./hooks', () => ({
       picked_card: 'CARD.BASH',
     },
   }),
+  useRuns: () => ({
+    isLoading: false,
+    isError: false,
+    data: {
+      page: 1,
+      page_size: 20,
+      total: 1,
+      total_pages: 1,
+      items: [
+        {
+          run_id: 'run-42',
+          seed: 'SEED',
+          character: 'IRONCLAD',
+          ascension: 10,
+          win: true,
+          raw_timestamp: '2026-01-01T10:00:00Z',
+          imported_at: '2026-01-01T10:01:00Z',
+          source_file: 'run-42.run',
+          card_choice_count: 2,
+          relic_count: 1,
+        },
+      ],
+    },
+  }),
+  useRunDetail: () => ({
+    isLoading: false,
+    isError: false,
+    data: {
+      run_id: 'run-42',
+      seed: 'SEED',
+      character: 'IRONCLAD',
+      ascension: 10,
+      win: true,
+      raw_timestamp: '2026-01-01T10:00:00Z',
+      imported_at: '2026-01-01T10:01:00Z',
+      source_file: 'run-42.run',
+      card_choices: [
+        {
+          floor: 1,
+          offered_cards: ['CARD.A', 'CARD.B'],
+          picked_card: 'CARD.A',
+          is_shop: false,
+        },
+      ],
+      relic_history: [{ relic_id: 'RELIC.ANCHOR', floor: 3 }],
+      raw_payload: { run_id: 'run-42', value: 123 },
+    },
+  }),
+  useRunTimeline: () => ({
+    isLoading: false,
+    isError: false,
+    data: {
+      run_id: 'run-42',
+      events: [{ floor: 1, kind: 'card_choice', summary: 'Picked CARD.A', data: {} }],
+    },
+  }),
+  useRunCompleteness: () => ({
+    isLoading: false,
+    isError: false,
+    data: {
+      run_id: 'run-42',
+      available: 4,
+      total: 12,
+      missing: ['Campfire choices'],
+    },
+  }),
 }))
 
 describe('RecommendationDashboard', () => {
@@ -85,6 +151,24 @@ describe('RecommendationDashboard', () => {
     expect(screen.getByText('Sorgente consigli')).toBeInTheDocument()
     expect(screen.getByText('Raccomandazione corrente')).toBeInTheDocument()
     expect(screen.getByText('Diagnostica ingest recente')).toBeInTheDocument()
+    expect(screen.getByText('Run History Explorer')).toBeInTheDocument()
+    expect(screen.getByText('Timeline floor-by-floor')).toBeInTheDocument()
+    expect(screen.getByText('Raw JSON completo')).toBeInTheDocument()
+    expect(screen.getByText('Export JSON run')).toBeInTheDocument()
+    expect(screen.getByText('Solo eventi decisionali')).toBeInTheDocument()
+    expect(screen.getByText('Score')).toBeInTheDocument()
+    expect(screen.getByText('Floor reached')).toBeInTheDocument()
+    expect(screen.getByText('Gold finale')).toBeInTheDocument()
+    expect(screen.getAllByText('dato assente').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('source: score')).toBeInTheDocument()
+    expect(screen.getByText('source: floor_reached')).toBeInTheDocument()
+    expect(screen.getByText('source: gold -> gold_per_floor[-1]')).toBeInTheDocument()
+    expect(screen.getByText('Data completeness')).toBeInTheDocument()
+    expect(screen.getByText(/campi chiave disponibili/)).toBeInTheDocument()
+    expect(screen.getByText(/mancanti:/)).toBeInTheDocument()
+    expect(
+      screen.getByText('Quick stats non disponibili in questo payload run.'),
+    ).toBeInTheDocument()
     expect(screen.getByText('Nessun errore ingest recente.')).toBeInTheDocument()
     expect(screen.getAllByText('CARD.BASH').length).toBeGreaterThan(0)
     expect(screen.getByText('scope character_ascension_floor')).toBeInTheDocument()

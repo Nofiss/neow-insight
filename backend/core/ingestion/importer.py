@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from typing import Any, cast
+
 from sqlmodel import Session, delete, select
 
 from core.db.models import CardChoice, RelicHistory, Run
@@ -56,15 +58,26 @@ class ImportReport:
 
 def _upsert_run(session: Session, file_path: Path) -> tuple[str, str]:
     parsed = parse_run_file(file_path)
+    imported_at = _utc_now_iso()
+    card_choices_table = cast(Any, getattr(CardChoice, "__table__"))
+    relic_history_table = cast(Any, getattr(RelicHistory, "__table__"))
     existing = session.get(Run, parsed.run_id)
     if existing:
         existing.seed = parsed.seed
         existing.character = parsed.character
         existing.ascension = parsed.ascension
         existing.win = parsed.win
+        existing.raw_timestamp = parsed.raw_timestamp
+        existing.imported_at = imported_at
+        existing.source_file = str(file_path)
+        existing.raw_payload = parsed.raw_payload
 
-        session.exec(delete(CardChoice).where(CardChoice.run_id == parsed.run_id))
-        session.exec(delete(RelicHistory).where(RelicHistory.run_id == parsed.run_id))
+        session.exec(
+            delete(CardChoice).where(card_choices_table.c.run_id == parsed.run_id)
+        )
+        session.exec(
+            delete(RelicHistory).where(relic_history_table.c.run_id == parsed.run_id)
+        )
         status = "updated"
     else:
         session.add(
@@ -74,6 +87,10 @@ def _upsert_run(session: Session, file_path: Path) -> tuple[str, str]:
                 character=parsed.character,
                 ascension=parsed.ascension,
                 win=parsed.win,
+                raw_timestamp=parsed.raw_timestamp,
+                imported_at=imported_at,
+                source_file=str(file_path),
+                raw_payload=parsed.raw_payload,
             )
         )
         status = "imported"

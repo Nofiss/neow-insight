@@ -50,6 +50,10 @@ def test_import_history_upserts_existing_run(tmp_path):
         run = session.get(Run, "run-100")
         assert run is not None
         assert run.win is False
+        assert run.source_file is not None
+        assert run.raw_payload["run_id"] == "run-100"
+        assert run.source_file.endswith("test.run")
+        assert run.imported_at
 
         _write_run(run_file, run_id="run-100", victory=True, picked="CARD.STRIKE")
         second_report = import_history(history_dir, session)
@@ -61,6 +65,8 @@ def test_import_history_upserts_existing_run(tmp_path):
         updated_run = session.get(Run, "run-100")
         assert updated_run is not None
         assert updated_run.win is True
+        assert updated_run.raw_payload["victory"] is True
+        assert updated_run.imported_at
 
         picks = session.exec(
             select(CardChoice).where(CardChoice.run_id == "run-100")

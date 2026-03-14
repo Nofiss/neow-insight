@@ -47,6 +47,23 @@ def _parse_relic_history(values: Any) -> list[ParsedRelic]:
     return relic_history
 
 
+def _parse_run_timestamp(payload: dict[str, Any]) -> str | None:
+    timestamp_fields = [
+        "timestamp",
+        "local_time",
+        "run_timestamp",
+        "playtime_timestamp",
+        "playtime",
+    ]
+    for field_name in timestamp_fields:
+        value = payload.get(field_name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, int | float):
+            return str(value)
+    return None
+
+
 def parse_run_file(path: Path) -> ParsedRun:
     try:
         raw = path.read_text(encoding="utf-8")
@@ -97,6 +114,7 @@ def parse_run_file(path: Path) -> ParsedRun:
             )
 
     relic_history = _parse_relic_history(payload.get("relics_obtained", []))
+    raw_timestamp = _parse_run_timestamp(payload)
 
     return ParsedRun(
         run_id=run_id,
@@ -104,6 +122,8 @@ def parse_run_file(path: Path) -> ParsedRun:
         character=character,
         ascension=ascension,
         win=win,
+        raw_timestamp=raw_timestamp,
+        raw_payload=payload,
         card_choices=card_choices,
         relic_history=relic_history,
     )

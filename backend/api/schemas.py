@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -67,3 +69,69 @@ class LiveContextResponse(BaseModel):
     floor: int | None
     offered_cards: list[str]
     picked_card: str | None
+
+
+class RunCardChoiceResponse(BaseModel):
+    floor: int
+    offered_cards: list[str]
+    picked_card: str
+    is_shop: bool
+
+
+class RunRelicResponse(BaseModel):
+    relic_id: str
+    floor: int
+
+
+class RunListItemResponse(BaseModel):
+    run_id: str
+    seed: str | None
+    character: str | None
+    ascension: int | None
+    win: bool
+    raw_timestamp: str | None
+    imported_at: str
+    source_file: str | None
+    card_choice_count: int
+    relic_count: int
+
+
+class RunsListResponse(BaseModel):
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+    items: list[RunListItemResponse]
+
+
+class RunDetailResponse(BaseModel):
+    run_id: str
+    seed: str | None
+    character: str | None
+    ascension: int | None
+    win: bool
+    raw_timestamp: str | None
+    imported_at: str
+    source_file: str | None
+    card_choices: list[RunCardChoiceResponse]
+    relic_history: list[RunRelicResponse]
+    raw_payload: dict[str, Any]
+
+
+class RunTimelineEventResponse(BaseModel):
+    floor: int
+    kind: str
+    summary: str
+    data: dict[str, Any]
+
+
+class RunTimelineResponse(BaseModel):
+    run_id: str
+    events: list[RunTimelineEventResponse]
+
+
+class RunCompletenessResponse(BaseModel):
+    run_id: str
+    available: int
+    total: int
+    missing: list[str]

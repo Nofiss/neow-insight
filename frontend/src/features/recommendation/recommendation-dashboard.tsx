@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,8 +11,13 @@ import {
   useIngestStatus,
   useLiveContext,
   useRecommendation,
+  useRunCompleteness,
+  useRunDetail,
+  useRuns,
+  useRunTimeline,
   useStats,
 } from './hooks'
+import type { RunTimelineEvent } from './types'
 
 const DEFAULT_CHARACTER = 'IRONCLAD'
 const DEFAULT_ASCENSION = 10
@@ -40,6 +45,17 @@ function formatUpdatedAt(timestamp: number): string {
   }).format(new Date(timestamp))
 }
 
+function formatIsoDate(value: string | null | undefined): string {
+  if (!value) {
+    return '-'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString('it-IT')
+}
+
 const REASON_LABELS = {
   low_sample_contextual: 'Campione contestuale ridotto: usa il suggerimento con cautela.',
   ok_contextual: 'Suggerimento contestuale supportato dai dati disponibili.',
@@ -51,12 +67,203 @@ const REASON_LABELS = {
   no_candidates: 'Nessuna carta valida ricevuta in input.',
 } as const
 
+const TIMELINE_KIND_STYLES: Record<string, string> = {
+  card_choice: 'border-amber-300 bg-amber-100 text-amber-900',
+  relic: 'border-blue-300 bg-blue-100 text-blue-900',
+  campfire: 'border-orange-300 bg-orange-100 text-orange-900',
+  event: 'border-violet-300 bg-violet-100 text-violet-900',
+  potion: 'border-emerald-300 bg-emerald-100 text-emerald-900',
+  boss_relic: 'border-rose-300 bg-rose-100 text-rose-900',
+}
+
+const TIMELINE_KIND_LABELS: Record<string, string> = {
+  all: 'Tutti',
+  card_choice: 'Card choice',
+  relic: 'Relic',
+  campfire: 'Campfire',
+  event: 'Event',
+  potion: 'Potion',
+  boss_relic: 'Boss relic',
+}
+
+const DECISION_EVENT_KINDS = new Set(['card_choice', 'campfire', 'event', 'boss_relic'])
+
+const HIGH_PRIORITY_MISSING_FIELDS = new Set([
+  'Score',
+  'Floor reached',
+  'Card choices',
+  'Event choices',
+  'Campfire choices',
+])
+
+const MEDIUM_PRIORITY_MISSING_FIELDS = new Set([
+  'Gold',
+  'Gold per floor',
+  'Boss relics',
+  'Potions obtained',
+])
+
+function formatTimelineFloor(event: RunTimelineEvent): string {
+  if (event.kind === 'boss_relic' && event.floor >= 900) {
+    return 'boss chest'
+  }
+  return `floor ${event.floor}`
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+}
+
+function eventMeta(event: RunTimelineEvent): string | null {
+  if (event.kind === 'card_choice') {
+    const offered = toStringArray(event.data.offered_cards)
+    const source = event.data.is_shop === true ? 'shop' : 'reward'
+    if (!offered.length) {
+      return `source ${source}`
+    }
+    return `source ${source} • offered ${offered.join(', ')}`
+  }
+
+  if (event.kind === 'event') {
+    const removed = toStringArray(event.data.cards_removed)
+    const obtained = toStringArray(event.data.cards_obtained)
+    const lines: string[] = []
+    if (removed.length) {
+      lines.push(`removed ${removed.join(', ')}`)
+    }
+    if (obtained.length) {
+      lines.push(`obtained ${obtained.join(', ')}`)
+    }
+    return lines.length ? lines.join(' • ') : null
+  }
+
+  if (event.kind === 'boss_relic') {
+    const skipped = toStringArray(event.data.not_picked)
+    if (skipped.length) {
+      return `skipped ${skipped.join(', ')}`
+    }
+  }
+
+  return null
+}
+
+function eventSearchBlob(event: RunTimelineEvent): string {
+  return `${event.kind} ${event.summary} ${JSON.stringify(event.data)}`.toLowerCase()
+}
+
+function eventStableKey(event: RunTimelineEvent): string {
+  return `${event.floor}-${event.kind}-${event.summary}-${JSON.stringify(event.data)}`
+}
+
+function asFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+  return null
+}
+
+function runQuickStats(rawPayload: Record<string, unknown>): {
+  score: number | null
+  floorReached: number | null
+  finalGold: number | null
+} {
+  const score = asFiniteNumber(rawPayload.score)
+  const floorReached = asFiniteNumber(rawPayload.floor_reached)
+
+  let finalGold = asFiniteNumber(rawPayload.gold)
+  if (finalGold === null && Array.isArray(rawPayload.gold_per_floor)) {
+    const values = rawPayload.gold_per_floor
+      .map((entry) => asFiniteNumber(entry))
+      .filter((entry): entry is number => entry !== null)
+    finalGold = values.length ? values[values.length - 1] : null
+  }
+
+  return { score, floorReached, finalGold }
+}
+
+function asNumberLabel(value: number | null): string {
+  if (value === null) {
+    return '-'
+  }
+  return new Intl.NumberFormat('it-IT').format(value)
+}
+
+function metricAvailabilityLabel(value: number | null): string {
+  return value === null ? 'dato assente' : 'dato disponibile'
+}
+
+function metricAvailabilityStyle(value: number | null): string {
+  if (value === null) {
+    return 'border-zinc-300 bg-zinc-100 text-zinc-700'
+  }
+  return 'border-emerald-300 bg-emerald-100 text-emerald-800'
+}
+
+function downloadRunJson(runId: string, payload: Record<string, unknown>): void {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = `${runId}.json`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(objectUrl)
+}
+
+function missingSeverity(missingLabels: string[]): 'low' | 'medium' | 'high' {
+  if (!missingLabels.length) {
+    return 'low'
+  }
+
+  const hasHigh = missingLabels.some((label) => HIGH_PRIORITY_MISSING_FIELDS.has(label))
+  if (hasHigh) {
+    return 'high'
+  }
+
+  const hasMedium = missingLabels.some((label) => MEDIUM_PRIORITY_MISSING_FIELDS.has(label))
+  if (hasMedium) {
+    return 'medium'
+  }
+
+  return 'low'
+}
+
+function severityBadgeClass(severity: 'low' | 'medium' | 'high'): string {
+  if (severity === 'high') {
+    return 'border-red-300 bg-red-100 text-red-800'
+  }
+  if (severity === 'medium') {
+    return 'border-amber-300 bg-amber-100 text-amber-800'
+  }
+  return 'border-emerald-300 bg-emerald-100 text-emerald-800'
+}
+
 export function RecommendationDashboard() {
   const [cardsInput, setCardsInput] = useState(DEFAULT_OFFERED.join(', '))
   const [characterInput, setCharacterInput] = useState(DEFAULT_CHARACTER)
   const [ascensionInput, setAscensionInput] = useState(DEFAULT_ASCENSION)
   const [floorInput, setFloorInput] = useState(DEFAULT_FLOOR)
   const [useLiveInput, setUseLiveInput] = useState(true)
+  const [runsPage, setRunsPage] = useState(1)
+  const [runsPageSize, setRunsPageSize] = useState(20)
+  const [runsCharacterFilter, setRunsCharacterFilter] = useState('')
+  const [runsAscensionFilter, setRunsAscensionFilter] = useState('')
+  const [runsWinFilter, setRunsWinFilter] = useState<'all' | 'wins' | 'losses'>('all')
+  const [runsQueryFilter, setRunsQueryFilter] = useState('')
+  const [timelineKindFilter, setTimelineKindFilter] = useState('all')
+  const [timelineQueryFilter, setTimelineQueryFilter] = useState('')
+  const [showDecisionOnly, setShowDecisionOnly] = useState(false)
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const offeredCards = useMemo(() => parseCardsInput(cardsInput), [cardsInput])
   const manualRecommendationContext = useMemo(
     () => ({
@@ -94,6 +301,22 @@ export function RecommendationDashboard() {
   const recommendation = useRecommendation(activeCards, activeRecommendationContext)
   const cardInsights = useCardInsights(activeCards)
   const ingestStatus = useIngestStatus()
+  const parsedAscension = Number(runsAscensionFilter)
+  const ascensionFilterValue =
+    runsAscensionFilter.trim() === '' || !Number.isFinite(parsedAscension)
+      ? undefined
+      : Math.max(0, Math.floor(parsedAscension))
+  const runs = useRuns({
+    page: runsPage,
+    pageSize: runsPageSize,
+    character: runsCharacterFilter.trim() || undefined,
+    ascension: ascensionFilterValue,
+    win: runsWinFilter === 'all' ? undefined : runsWinFilter === 'wins',
+    query: runsQueryFilter.trim() || undefined,
+  })
+  const runDetail = useRunDetail(selectedRunId)
+  const runTimeline = useRunTimeline(selectedRunId)
+  const runCompleteness = useRunCompleteness(selectedRunId)
 
   const hasError =
     health.isError ||
@@ -105,6 +328,77 @@ export function RecommendationDashboard() {
   const recommendationReason = recommendation.data?.reason
   const reasonLabel = REASON_LABELS[recommendationReason ?? 'ok_global']
   const liveUpdatedAt = formatUpdatedAt(liveContext.dataUpdatedAt)
+
+  const runItems = runs.data?.items ?? []
+  const selectedRun = runDetail.data
+  const timelineEvents = runTimeline.data?.events ?? []
+  const selectedRunStats = useMemo(
+    () => (selectedRun ? runQuickStats(selectedRun.raw_payload) : null),
+    [selectedRun],
+  )
+  const selectedRunCompleteness = runCompleteness.data
+  const completenessSeverity = selectedRunCompleteness
+    ? missingSeverity(selectedRunCompleteness.missing)
+    : null
+  const hasQuickStats =
+    selectedRunStats !== null &&
+    (selectedRunStats.score !== null ||
+      selectedRunStats.floorReached !== null ||
+      selectedRunStats.finalGold !== null)
+
+  const timelineKinds = useMemo(() => {
+    const kinds = new Set<string>()
+    for (const event of timelineEvents) {
+      kinds.add(event.kind)
+    }
+    return ['all', ...Array.from(kinds).sort()]
+  }, [timelineEvents])
+
+  const filteredTimelineEvents = useMemo(() => {
+    const query = timelineQueryFilter.trim().toLowerCase()
+    return timelineEvents.filter((event) => {
+      if (showDecisionOnly && !DECISION_EVENT_KINDS.has(event.kind)) {
+        return false
+      }
+      if (timelineKindFilter !== 'all' && event.kind !== timelineKindFilter) {
+        return false
+      }
+      if (!query) {
+        return true
+      }
+      return eventSearchBlob(event).includes(query)
+    })
+  }, [timelineEvents, showDecisionOnly, timelineKindFilter, timelineQueryFilter])
+
+  const groupedTimelineEvents = useMemo(() => {
+    const groups = new Map<number, RunTimelineEvent[]>()
+    for (const event of filteredTimelineEvents) {
+      const current = groups.get(event.floor)
+      if (current) {
+        current.push(event)
+      } else {
+        groups.set(event.floor, [event])
+      }
+    }
+
+    return Array.from(groups.entries())
+      .sort(([floorA], [floorB]) => floorA - floorB)
+      .map(([floor, events]) => ({ floor, events }))
+  }, [filteredTimelineEvents])
+
+  useEffect(() => {
+    if (selectedRunId && runItems.some((item) => item.run_id === selectedRunId)) {
+      return
+    }
+    setSelectedRunId(runItems[0]?.run_id ?? null)
+  }, [runItems, selectedRunId])
+
+  useEffect(() => {
+    if (timelineKinds.includes(timelineKindFilter)) {
+      return
+    }
+    setTimelineKindFilter('all')
+  }, [timelineKindFilter, timelineKinds])
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:py-12">
@@ -443,6 +737,482 @@ export function RecommendationDashboard() {
               </div>
             ) : (
               <p className="mt-2 text-sm text-zinc-500">Nessun errore ingest recente.</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-zinc-300/90 bg-zinc-50/70">
+        <CardHeader>
+          <CardDescription>Run storiche indicizzate</CardDescription>
+          <CardTitle>Run History Explorer</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="space-y-2">
+              <label
+                htmlFor="runs-query"
+                className="text-xs font-semibold tracking-[0.12em] text-zinc-500 uppercase"
+              >
+                Ricerca
+              </label>
+              <input
+                id="runs-query"
+                type="text"
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                placeholder="run id, character, seed"
+                value={runsQueryFilter}
+                onChange={(event) => {
+                  setRunsPage(1)
+                  setRunsQueryFilter(event.target.value)
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="runs-character"
+                className="text-xs font-semibold tracking-[0.12em] text-zinc-500 uppercase"
+              >
+                Character
+              </label>
+              <input
+                id="runs-character"
+                type="text"
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                placeholder="IRONCLAD"
+                value={runsCharacterFilter}
+                onChange={(event) => {
+                  setRunsPage(1)
+                  setRunsCharacterFilter(event.target.value)
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="runs-ascension"
+                className="text-xs font-semibold tracking-[0.12em] text-zinc-500 uppercase"
+              >
+                Ascension
+              </label>
+              <input
+                id="runs-ascension"
+                type="number"
+                min={0}
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                value={runsAscensionFilter}
+                onChange={(event) => {
+                  setRunsPage(1)
+                  setRunsAscensionFilter(event.target.value)
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="runs-win"
+                className="text-xs font-semibold tracking-[0.12em] text-zinc-500 uppercase"
+              >
+                Esito
+              </label>
+              <select
+                id="runs-win"
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                value={runsWinFilter}
+                onChange={(event) => {
+                  setRunsPage(1)
+                  setRunsWinFilter(event.target.value as 'all' | 'wins' | 'losses')
+                }}
+              >
+                <option value="all">Tutte</option>
+                <option value="wins">Solo vittorie</option>
+                <option value="losses">Solo sconfitte</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="runs-size"
+                className="text-xs font-semibold tracking-[0.12em] text-zinc-500 uppercase"
+              >
+                Page size
+              </label>
+              <select
+                id="runs-size"
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                value={runsPageSize}
+                onChange={(event) => {
+                  setRunsPage(1)
+                  setRunsPageSize(Number(event.target.value))
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-zinc-300 bg-white">
+            <div className="grid grid-cols-5 gap-2 border-b border-zinc-200 px-3 py-2 text-xs font-semibold tracking-[0.1em] text-zinc-500 uppercase">
+              <span>Run</span>
+              <span>Character</span>
+              <span>Asc</span>
+              <span>Outcome</span>
+              <span>Timestamp</span>
+            </div>
+            {runs.isLoading ? (
+              <div className="space-y-2 p-3">
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+            ) : runItems.length === 0 ? (
+              <p className="p-3 text-sm text-zinc-500">
+                Nessuna run trovata con i filtri correnti.
+              </p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto">
+                {runItems.map((item) => (
+                  <button
+                    key={item.run_id}
+                    type="button"
+                    onClick={() => setSelectedRunId(item.run_id)}
+                    className={`grid w-full grid-cols-5 gap-2 border-b border-zinc-100 px-3 py-2 text-left text-sm transition hover:bg-zinc-50 ${
+                      selectedRunId === item.run_id ? 'bg-amber-50/60' : 'bg-white'
+                    }`}
+                  >
+                    <span className="truncate text-zinc-900">{item.run_id}</span>
+                    <span className="truncate text-zinc-700">{item.character ?? '-'}</span>
+                    <span className="text-zinc-700">{item.ascension ?? '-'}</span>
+                    <span>
+                      <Badge
+                        className={
+                          item.win
+                            ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+                            : 'border-zinc-300 bg-zinc-100 text-zinc-700'
+                        }
+                      >
+                        {item.win ? 'win' : 'loss'}
+                      </Badge>
+                    </span>
+                    <span className="truncate text-zinc-600">
+                      {formatIsoDate(item.raw_timestamp ?? item.imported_at)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-zinc-500">
+              pagina {runs.data?.page ?? runsPage} di {runs.data?.total_pages ?? 1} • totale run{' '}
+              {runs.data?.total ?? 0}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-zinc-300 bg-white px-3 py-1 text-sm text-zinc-700 disabled:opacity-50"
+                disabled={(runs.data?.page ?? runsPage) <= 1}
+                onClick={() => setRunsPage((prev) => Math.max(1, prev - 1))}
+              >
+                Prev
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-zinc-300 bg-white px-3 py-1 text-sm text-zinc-700 disabled:opacity-50"
+                disabled={(runs.data?.page ?? runsPage) >= (runs.data?.total_pages ?? 1)}
+                onClick={() => setRunsPage((prev) => prev + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-lg border border-zinc-300 bg-white p-4">
+              <p className="text-sm font-medium text-zinc-700">Dettaglio run</p>
+              {!selectedRunId ? (
+                <p className="mt-2 text-sm text-zinc-500">Seleziona una run dall'elenco.</p>
+              ) : runDetail.isLoading ? (
+                <Skeleton className="mt-3 h-24 w-full" />
+              ) : selectedRun ? (
+                <div className="mt-3 space-y-2 text-sm text-zinc-700">
+                  <p>
+                    <span className="font-medium text-zinc-900">run id:</span> {selectedRun.run_id}
+                  </p>
+                  <p>
+                    <span className="font-medium text-zinc-900">character:</span>{' '}
+                    {selectedRun.character ?? '-'}
+                  </p>
+                  <p>
+                    <span className="font-medium text-zinc-900">ascension:</span>{' '}
+                    {selectedRun.ascension ?? '-'}
+                  </p>
+                  <p>
+                    <span className="font-medium text-zinc-900">outcome:</span>{' '}
+                    {selectedRun.win ? 'win' : 'loss'}
+                  </p>
+                  <p>
+                    <span className="font-medium text-zinc-900">seed:</span>{' '}
+                    {selectedRun.seed ?? '-'}
+                  </p>
+                  <p>
+                    <span className="font-medium text-zinc-900">run timestamp:</span>{' '}
+                    {formatIsoDate(selectedRun.raw_timestamp)}
+                  </p>
+                  <p>
+                    <span className="font-medium text-zinc-900">card choices:</span>{' '}
+                    {selectedRun.card_choices.length}
+                  </p>
+                  <p>
+                    <span className="font-medium text-zinc-900">relic events:</span>{' '}
+                    {selectedRun.relic_history.length}
+                  </p>
+                  <p>
+                    <span className="font-medium text-zinc-900">imported:</span>{' '}
+                    {formatIsoDate(selectedRun.imported_at)}
+                  </p>
+                  <p className="break-all text-xs text-zinc-500">
+                    source: {selectedRun.source_file ?? '-'}
+                  </p>
+                  <div className="grid gap-2 pt-1 sm:grid-cols-3">
+                    <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                          Score
+                        </p>
+                        <Badge
+                          className={`text-[10px] uppercase ${metricAvailabilityStyle(selectedRunStats?.score ?? null)}`}
+                        >
+                          {metricAvailabilityLabel(selectedRunStats?.score ?? null)}
+                        </Badge>
+                      </div>
+                      <p className="text-sm font-medium text-zinc-800">
+                        {asNumberLabel(selectedRunStats?.score ?? null)}
+                      </p>
+                      <p className="text-[11px] text-zinc-500" title="Campo raw usato: score">
+                        source: score
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                          Floor reached
+                        </p>
+                        <Badge
+                          className={`text-[10px] uppercase ${metricAvailabilityStyle(selectedRunStats?.floorReached ?? null)}`}
+                        >
+                          {metricAvailabilityLabel(selectedRunStats?.floorReached ?? null)}
+                        </Badge>
+                      </div>
+                      <p className="text-sm font-medium text-zinc-800">
+                        {asNumberLabel(selectedRunStats?.floorReached ?? null)}
+                      </p>
+                      <p
+                        className="text-[11px] text-zinc-500"
+                        title="Campo raw usato: floor_reached"
+                      >
+                        source: floor_reached
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                          Gold finale
+                        </p>
+                        <Badge
+                          className={`text-[10px] uppercase ${metricAvailabilityStyle(selectedRunStats?.finalGold ?? null)}`}
+                        >
+                          {metricAvailabilityLabel(selectedRunStats?.finalGold ?? null)}
+                        </Badge>
+                      </div>
+                      <p className="text-sm font-medium text-zinc-800">
+                        {asNumberLabel(selectedRunStats?.finalGold ?? null)}
+                      </p>
+                      <p
+                        className="text-[11px] text-zinc-500"
+                        title="Campo raw usato: gold (fallback: gold_per_floor ultimo valore)"
+                      >
+                        source: gold {'->'} gold_per_floor[-1]
+                      </p>
+                    </div>
+                  </div>
+                  {!hasQuickStats ? (
+                    <p className="text-xs text-zinc-500">
+                      Quick stats non disponibili in questo payload run.
+                    </p>
+                  ) : null}
+                  <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                        Data completeness
+                      </p>
+                      {completenessSeverity ? (
+                        <Badge
+                          className={`text-[10px] uppercase ${severityBadgeClass(completenessSeverity)}`}
+                        >
+                          {completenessSeverity} impact
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {runCompleteness.isLoading ? (
+                      <Skeleton className="mt-2 h-5 w-48" />
+                    ) : runCompleteness.isError ? (
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Impossibile caricare la completeness da API.
+                      </p>
+                    ) : selectedRunCompleteness ? (
+                      <>
+                        <p className="mt-1 text-sm text-zinc-800">
+                          campi chiave disponibili {selectedRunCompleteness.available} su{' '}
+                          {selectedRunCompleteness.total}
+                        </p>
+                        {selectedRunCompleteness.missing.length ? (
+                          <p className="mt-1 text-xs text-zinc-500">
+                            mancanti: {selectedRunCompleteness.missing.join(', ')}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-xs text-zinc-500">
+                            Tutti i campi chiave sono presenti.
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Nessun dato completeness disponibile.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-zinc-500">Run non trovata.</p>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-zinc-300 bg-white p-4">
+              <p className="text-sm font-medium text-zinc-700">Timeline floor-by-floor</p>
+              {!selectedRunId ? (
+                <p className="mt-2 text-sm text-zinc-500">Seleziona una run dall'elenco.</p>
+              ) : runTimeline.isLoading ? (
+                <Skeleton className="mt-3 h-24 w-full" />
+              ) : timelineEvents.length ? (
+                <div className="mt-3 space-y-3">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="timeline-kind"
+                        className="text-[11px] font-semibold tracking-[0.12em] text-zinc-500 uppercase"
+                      >
+                        Tipo evento
+                      </label>
+                      <select
+                        id="timeline-kind"
+                        className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                        value={timelineKindFilter}
+                        onChange={(event) => setTimelineKindFilter(event.target.value)}
+                      >
+                        {timelineKinds.map((kind) => (
+                          <option key={kind} value={kind}>
+                            {TIMELINE_KIND_LABELS[kind] ?? kind.replaceAll('_', ' ')}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="timeline-query"
+                        className="text-[11px] font-semibold tracking-[0.12em] text-zinc-500 uppercase"
+                      >
+                        Cerca evento
+                      </label>
+                      <input
+                        id="timeline-query"
+                        type="text"
+                        className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
+                        placeholder="es. remove, smith, boss"
+                        value={timelineQueryFilter}
+                        onChange={(event) => setTimelineQueryFilter(event.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 text-xs text-zinc-600">
+                    <input
+                      type="checkbox"
+                      checked={showDecisionOnly}
+                      onChange={(event) => setShowDecisionOnly(event.target.checked)}
+                    />
+                    Solo eventi decisionali
+                  </label>
+
+                  <p className="text-xs text-zinc-500">
+                    eventi mostrati {filteredTimelineEvents.length} su {timelineEvents.length}
+                  </p>
+
+                  {groupedTimelineEvents.length ? (
+                    <div className="max-h-72 space-y-3 overflow-y-auto">
+                      {groupedTimelineEvents.map((group) => (
+                        <div key={group.floor} className="space-y-2">
+                          <p className="text-xs font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                            {group.floor >= 900 ? 'Boss chest' : `Floor ${group.floor}`}
+                          </p>
+                          {group.events.map((event) => (
+                            <div
+                              key={eventStableKey(event)}
+                              className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2"
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-xs font-semibold text-zinc-700 uppercase">
+                                  {formatTimelineFloor(event)}
+                                </p>
+                                <Badge
+                                  className={`text-[10px] uppercase ${TIMELINE_KIND_STYLES[event.kind] ?? 'border-zinc-300 bg-zinc-100 text-zinc-700'}`}
+                                >
+                                  {event.kind.replaceAll('_', ' ')}
+                                </Badge>
+                              </div>
+                              <p className="mt-1 text-sm text-zinc-800">{event.summary}</p>
+                              {eventMeta(event) ? (
+                                <p className="mt-1 text-xs text-zinc-600">{eventMeta(event)}</p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-zinc-500">
+                      Nessun evento con i filtri timeline correnti.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-zinc-500">Nessun evento timeline disponibile.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-zinc-300 bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-medium text-zinc-700">Raw JSON completo</p>
+              {selectedRun ? (
+                <button
+                  type="button"
+                  className="rounded-md border border-zinc-300 bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-200"
+                  onClick={() => downloadRunJson(selectedRun.run_id, selectedRun.raw_payload)}
+                >
+                  Export JSON run
+                </button>
+              ) : null}
+            </div>
+            {!selectedRunId ? (
+              <p className="mt-2 text-sm text-zinc-500">Seleziona una run dall'elenco.</p>
+            ) : runDetail.isLoading ? (
+              <Skeleton className="mt-3 h-32 w-full" />
+            ) : selectedRun ? (
+              <pre className="mt-3 max-h-72 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-800">
+                {JSON.stringify(selectedRun.raw_payload, null, 2)}
+              </pre>
+            ) : (
+              <p className="mt-2 text-sm text-zinc-500">Run non trovata.</p>
             )}
           </div>
         </CardContent>

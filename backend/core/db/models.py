@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional
+from datetime import UTC, datetime
+from typing import Any, Optional
 
 from sqlalchemy import JSON, Column, Index
 from sqlmodel import Field, SQLModel
@@ -14,6 +15,13 @@ class Run(SQLModel, table=True):
     character: Optional[str] = Field(default=None, index=True)
     ascension: Optional[int] = Field(default=None, index=True)
     win: bool = Field(default=False, index=True)
+    raw_timestamp: Optional[str] = Field(default=None, index=True)
+    imported_at: str = Field(
+        default_factory=lambda: datetime.now(UTC).isoformat(),
+        index=True,
+    )
+    source_file: Optional[str] = Field(default=None)
+    raw_payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
 
 class CardChoice(SQLModel, table=True):
@@ -36,5 +44,5 @@ class RelicHistory(SQLModel, table=True):
     floor: int = Field(index=True)
 
 
-Index("ix_card_choices_run_floor", CardChoice.run_id, CardChoice.floor)
-Index("ix_relic_history_run_floor", RelicHistory.run_id, RelicHistory.floor)
+Index("ix_card_choices_run_floor", "run_id", "floor")
+Index("ix_relic_history_run_floor", "run_id", "floor")

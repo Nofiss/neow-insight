@@ -575,3 +575,246 @@ def test_live_context_endpoint_returns_latest_card_choice(client_and_engine):
     assert payload["floor"] == 7
     assert payload["offered_cards"] == ["CARD.C", "CARD.D"]
     assert payload["picked_card"] == "CARD.D"
+
+
+def test_runs_list_endpoint_returns_paginated_runs(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Run(
+                    id="run-1",
+                    character="IRONCLAD",
+                    ascension=5,
+                    win=True,
+                    raw_timestamp="2026-01-02T10:00:00Z",
+                    imported_at="2026-01-02T10:05:00Z",
+                    source_file="first.run",
+                    raw_payload={"run_id": "run-1"},
+                ),
+                Run(
+                    id="run-2",
+                    character="SILENT",
+                    ascension=2,
+                    win=False,
+                    raw_timestamp="2026-01-03T10:00:00Z",
+                    imported_at="2026-01-03T10:05:00Z",
+                    source_file="second.run",
+                    raw_payload={"run_id": "run-2"},
+                ),
+            ]
+        )
+        session.add(
+            CardChoice(
+                run_id="run-2",
+                floor=1,
+                offered_cards=["CARD.A", "CARD.B"],
+                picked_card="CARD.A",
+                is_shop=False,
+            )
+        )
+        session.commit()
+
+    response = client.get("/runs?page=1&page_size=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["page"] == 1
+    assert payload["page_size"] == 1
+    assert payload["total"] == 2
+    assert payload["total_pages"] == 2
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["run_id"] == "run-2"
+
+
+def test_runs_list_endpoint_filters_by_character_and_win(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Run(
+                    id="run-10",
+                    character="IRONCLAD",
+                    ascension=5,
+                    win=True,
+                    imported_at="2026-01-02T10:05:00Z",
+                    raw_payload={"run_id": "run-10"},
+                ),
+                Run(
+                    id="run-11",
+                    character="IRONCLAD",
+                    ascension=5,
+                    win=False,
+                    imported_at="2026-01-03T10:05:00Z",
+                    raw_payload={"run_id": "run-11"},
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/runs?character=IRONCLAD&win=true")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["run_id"] == "run-10"
+
+
+def test_run_detail_endpoint_returns_full_payload(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-detail",
+                character="IRONCLAD",
+                ascension=10,
+                win=True,
+                imported_at="2026-01-03T10:05:00Z",
+                raw_payload={"run_id": "run-detail", "some": "value"},
+            )
+        )
+        session.add(
+            CardChoice(
+                run_id="run-detail",
+                floor=3,
+                offered_cards=["CARD.A", "CARD.B"],
+                picked_card="CARD.A",
+                is_shop=False,
+            )
+        )
+        session.commit()
+
+    response = client.get("/runs/run-detail")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_id"] == "run-detail"
+    assert payload["raw_payload"]["some"] == "value"
+    assert len(payload["card_choices"]) == 1
+
+
+def test_run_timeline_endpoint_returns_sorted_events(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-timeline",
+                character="SILENT",
+                ascension=2,
+                win=False,
+                imported_at="2026-01-03T10:05:00Z",
+                raw_payload={"run_id": "run-timeline"},
+            )
+        )
+        session.add_all(
+            [
+                CardChoice(
+                    run_id="run-timeline",
+                    floor=5,
+                    offered_cards=["CARD.A", "CARD.B"],
+                    picked_card="CARD.B",
+                    is_shop=False,
+                ),
+                CardChoice(
+                    run_id="run-timeline",
+                    floor=2,
+                    offered_cards=["CARD.C", "CARD.D"],
+                    picked_card="CARD.C",
+                    is_shop=False,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/runs/run-timeline/timeline")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_id"] == "run-timeline"
+    assert payload["events"][0]["floor"] == 2
+    assert payload["events"][1]["floor"] == 5
+
+
+def test_run_detail_endpoint_returns_404_for_missing_run(client_and_engine):
+    client, _ = client_and_engine
+
+    response = client.get("/runs/missing-run")
+
+    assert response.status_code == 404
+
+
+def test_run_timeline_includes_extended_events_from_raw_payload(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-rich",
+                character="IRONCLAD",
+                ascension=12,
+                win=True,
+                imported_at="2026-01-03T10:05:00Z",
+                raw_payload={
+                    "run_id": "run-rich",
+                    "campfire_choices": [{"floor": 6, "key": "REST"}],
+                    "event_choices": [
+                        {
+                            "floor": 8,
+                            "event_name": "Golden Idol",
+                            "player_choice": "TAKE_DAMAGE",
+                        }
+                    ],
+                    "potions_obtained": [{"floor": 9, "key": "POTION.FIRE"}],
+                    "boss_relics": [{"picked": "RELIC.BLACK_BLOOD"}],
+                },
+            )
+        )
+        session.commit()
+
+    response = client.get("/runs/run-rich/timeline")
+
+    assert response.status_code == 200
+    payload = response.json()
+    kinds = [event["kind"] for event in payload["events"]]
+    assert "campfire" in kinds
+    assert "event" in kinds
+    assert "potion" in kinds
+    assert "boss_relic" in kinds
+
+
+def test_run_completeness_endpoint_returns_field_coverage(client_and_engine):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-complete",
+                character="IRONCLAD",
+                ascension=12,
+                win=True,
+                imported_at="2026-01-03T10:05:00Z",
+                raw_payload={
+                    "run_id": "run-complete",
+                    "score": 100,
+                    "floor_reached": 20,
+                    "gold": 250,
+                    "card_choices": [{"floor": 1}],
+                },
+            )
+        )
+        session.commit()
+
+    response = client.get("/runs/run-complete/completeness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_id"] == "run-complete"
+    assert payload["available"] > 0
+    assert payload["total"] == 12
+    assert "Campfire choices" in payload["missing"]
+
+
+def test_run_completeness_endpoint_returns_404_for_missing_run(client_and_engine):
+    client, _ = client_and_engine
+
+    response = client.get("/runs/missing-run/completeness")
+
+    assert response.status_code == 404
