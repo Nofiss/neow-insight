@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   fetchLiveContext,
   fetchRecommendation,
+  recoverLiveCards,
   fetchRunCharacters,
   fetchRunCompleteness,
   fetchRunDetail,
@@ -102,6 +103,36 @@ describe('fetchLiveContext', () => {
     const result = await fetchLiveContext()
 
     expect(fetchMock).toHaveBeenCalledWith('/api/live/context')
+    expect(result).toEqual(payload)
+  })
+})
+
+describe('recoverLiveCards', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('posts screenshot payload to recovery endpoint', async () => {
+    const payload = {
+      success: true,
+      offered_cards: ['CARD.BASH', 'CARD.CLOTHESLINE', 'CARD.OFF_BALANCE'],
+      source: 'llm_vision',
+      llm_model: 'gemma:8b',
+      llm_error: null,
+    }
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => payload,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await recoverLiveCards('base64-image')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/live/recover-cards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64: 'base64-image' }),
+    })
     expect(result).toEqual(payload)
   })
 })

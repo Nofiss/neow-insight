@@ -68,7 +68,8 @@ def test_get_settings_defaults_llm_values(tmp_path: Path, monkeypatch):
     assert settings.llm_enabled is False
     assert settings.llm_provider == "ollama"
     assert settings.llm_base_url == "http://127.0.0.1:11434"
-    assert settings.llm_model == "gemma3:latest"
+    assert settings.llm_recommendation_model == "gemma3:latest"
+    assert settings.llm_vision_model == "gemma3:latest"
     assert settings.llm_timeout_ms == 1500
     get_settings.cache_clear()
 
@@ -86,7 +87,8 @@ def test_get_settings_reads_llm_values_from_file(tmp_path: Path, monkeypatch):
                 "enabled = true",
                 'provider = "ollama"',
                 'base_url = "http://localhost:11434"',
-                'model = "llama3.1:8b"',
+                'recommendation_model = "llama3.1:8b"',
+                'vision_model = "llama3.2-vision:11b"',
                 "timeout_ms = 2200",
             ]
         ),
@@ -100,6 +102,36 @@ def test_get_settings_reads_llm_values_from_file(tmp_path: Path, monkeypatch):
     assert settings.llm_enabled is True
     assert settings.llm_provider == "ollama"
     assert settings.llm_base_url == "http://localhost:11434"
-    assert settings.llm_model == "llama3.1:8b"
+    assert settings.llm_recommendation_model == "llama3.1:8b"
+    assert settings.llm_vision_model == "llama3.2-vision:11b"
     assert settings.llm_timeout_ms == 2200
+    get_settings.cache_clear()
+
+
+def test_get_settings_keeps_legacy_model_as_fallback(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    backend = workspace / "backend"
+    core = backend / "core"
+    core.mkdir(parents=True)
+    (core / "config.py").write_text("", encoding="utf-8")
+    (workspace / "settings.toml").write_text(
+        "\n".join(
+            [
+                "[llm]",
+                "enabled = true",
+                'provider = "ollama"',
+                'base_url = "http://localhost:11434"',
+                'model = "gemma:8b"',
+                "timeout_ms = 2000",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(config_module, "__file__", str(core / "config.py"))
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    assert settings.llm_recommendation_model == "gemma:8b"
+    assert settings.llm_vision_model == "gemma:8b"
     get_settings.cache_clear()

@@ -25,6 +25,28 @@ class LlmClient:
         self.timeout_seconds = max(timeout_ms, 1) / 1000
 
     def complete_json(self, *, prompt: str, system_prompt: str) -> LlmJsonResponse:
+        return self._complete_json(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            image_base64=None,
+        )
+
+    def complete_json_with_image(
+        self, *, prompt: str, system_prompt: str, image_base64: str
+    ) -> LlmJsonResponse:
+        return self._complete_json(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            image_base64=image_base64,
+        )
+
+    def _complete_json(
+        self,
+        *,
+        prompt: str,
+        system_prompt: str,
+        image_base64: str | None,
+    ) -> LlmJsonResponse:
         endpoint = f"{self.base_url}/api/generate"
         body = {
             "model": self.model,
@@ -36,6 +58,8 @@ class LlmClient:
                 "temperature": 0,
             },
         }
+        if image_base64:
+            body["images"] = [image_base64]
         payload = json.dumps(body).encode("utf-8")
         req = request.Request(
             endpoint,

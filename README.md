@@ -205,6 +205,14 @@ run_history_path = "C:/Users/<utente>/AppData/Roaming/SlayTheSpire2/steam/765611
 [watcher]
 enabled = true
 debounce_seconds = 0.4
+
+[llm]
+enabled = false
+provider = "ollama"
+base_url = "http://127.0.0.1:11434"
+recommendation_model = "gemma3:latest"
+vision_model = "gemma3:latest"
+timeout_ms = 1500
 ```
 
 Con questa configurazione, avvia normalmente:

@@ -7,6 +7,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from api.main import app
+from api.services import live_context as live_context_service
 from api.state import ingest_status
 from core.db import get_session
 from core.db.models import CardChoice, Run
@@ -47,12 +48,15 @@ def client_and_engine():
         ingest_status.last_processed_file = None
         ingest_status.last_event_at = None
 
+    live_context_service.clear_recovered_live_cards()
+
     reset_ingest_status()
     try:
         with TestClient(app) as client:
             reset_ingest_status()
             yield client, engine
     finally:
+        live_context_service.clear_recovered_live_cards()
         app.dependency_overrides.clear()
         reset_ingest_status()
 
@@ -836,6 +840,170 @@ def test_live_context_endpoint_tiebreaks_with_run_id_when_recency_is_equal(
     assert payload["floor"] == 5
     assert payload["offered_cards"] == ["CARD.B1", "CARD.B2"]
     assert payload["picked_card"] == "CARD.B2"
+
+
+def test_live_recover_cards_endpoint_returns_live_unavailable_when_no_run(
+    client_and_engine,
+):
+    client, _ = client_and_engine
+
+    response = client.post("/live/recover-cards", json={"image_base64": "abc"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {
+        "success": False,
+        "offered_cards": [],
+        "source": "live_unavailable",
+        "llm_model": None,
+        "llm_error": "live_unavailable",
+    }
+
+
+def test_live_recover_cards_endpoint_returns_save_cards_when_present(
+    client_and_engine,
+):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-live-save-cards",
+                character="IRONCLAD",
+                ascension=3,
+                win=False,
+                imported_at="2026-03-15T03:00:00Z",
+                raw_payload={"run_id": "run-live-save-cards", "floor_reached": 4},
+            )
+        )
+        session.add(
+            CardChoice(
+                run_id="run-live-save-cards",
+                floor=4,
+                offered_cards=["CARD.A", "CARD.B", "CARD.C"],
+                picked_card="CARD.A",
+                is_shop=False,
+            )
+        )
+        session.commit()
+
+    response = client.post("/live/recover-cards", json={"image_base64": "abc"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {
+        "success": True,
+        "offered_cards": ["CARD.A", "CARD.B", "CARD.C"],
+        "source": "save",
+        "llm_model": None,
+        "llm_error": None,
+    }
+
+
+def test_live_recover_cards_endpoint_uses_llm_and_updates_live_context(
+    client_and_engine,
+    monkeypatch,
+):
+    from api.services import live_card_recovery
+
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-live-recover",
+                character="WATCHER",
+                ascension=2,
+                win=False,
+                imported_at="2026-03-15T04:00:00Z",
+                raw_payload={"run_id": "run-live-recover", "floor_reached": 6},
+            )
+        )
+        session.commit()
+
+    class _StubResponse:
+        def __init__(self):
+            self.payload = {
+                "offered_cards": ["card.alpha", "CARD.BETA", "Card beta", "CARD.GAMMA"]
+            }
+            self.model = "gemma:8b"
+
+    class _StubClient:
+        def __init__(self, *, base_url: str, model: str, timeout_ms: int) -> None:
+            self.base_url = base_url
+            self.model = model
+            self.timeout_ms = timeout_ms
+
+        def complete_json_with_image(
+            self, *, prompt: str, system_prompt: str, image_base64: str
+        ):
+            return _StubResponse()
+
+    monkeypatch.setattr(live_card_recovery, "LlmClient", _StubClient)
+
+    response = client.post("/live/recover-cards", json={"image_base64": "abc"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {
+        "success": True,
+        "offered_cards": ["CARD.ALPHA", "CARD.BETA", "CARD.GAMMA"],
+        "source": "llm_vision",
+        "llm_model": "gemma:8b",
+        "llm_error": None,
+    }
+
+    live_context_response = client.get("/live/context")
+    assert live_context_response.status_code == 200
+    live_payload = live_context_response.json()
+    assert live_payload["offered_cards"] == ["CARD.ALPHA", "CARD.BETA", "CARD.GAMMA"]
+
+
+def test_live_recover_cards_endpoint_returns_llm_error_when_invalid_payload(
+    client_and_engine,
+    monkeypatch,
+):
+    from api.services import live_card_recovery
+
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-live-recover-invalid",
+                character="SILENT",
+                ascension=1,
+                win=False,
+                imported_at="2026-03-15T05:00:00Z",
+                raw_payload={"run_id": "run-live-recover-invalid", "floor_reached": 8},
+            )
+        )
+        session.commit()
+
+    class _StubResponse:
+        def __init__(self):
+            self.payload = {"wrong": []}
+            self.model = "gemma:8b"
+
+    class _StubClient:
+        def __init__(self, *, base_url: str, model: str, timeout_ms: int) -> None:
+            self.base_url = base_url
+            self.model = model
+            self.timeout_ms = timeout_ms
+
+        def complete_json_with_image(
+            self, *, prompt: str, system_prompt: str, image_base64: str
+        ):
+            return _StubResponse()
+
+    monkeypatch.setattr(live_card_recovery, "LlmClient", _StubClient)
+
+    response = client.post("/live/recover-cards", json={"image_base64": "abc"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["offered_cards"] == []
+    assert payload["source"] == "llm_vision"
+    assert payload["llm_model"] == "gemma:8b"
+    assert payload["llm_error"] is not None
 
 
 def test_runs_list_endpoint_returns_paginated_runs(client_and_engine):

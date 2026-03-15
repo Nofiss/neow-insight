@@ -186,7 +186,7 @@ def _get_llm_recommendation(
     )
     client = LlmClient(
         base_url=settings.llm_base_url,
-        model=settings.llm_model,
+        model=settings.llm_recommendation_model,
         timeout_ms=settings.llm_timeout_ms,
     )
 
@@ -203,7 +203,7 @@ def _get_llm_recommendation(
         return result
     except (LlmClientError, ValidationError) as exc:
         error_code = str(exc)
-        result = (None, settings.llm_model, error_code)
+        result = (None, settings.llm_recommendation_model, error_code)
         _LLM_CACHE[cache_key] = result
         return result
 

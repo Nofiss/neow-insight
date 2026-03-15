@@ -1,12 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import desc
 from sqlmodel import Session, col, func, select
 
 from core.db.models import CardChoice, Run
+
+
+_RECOVERED_CARDS_TTL_SECONDS = 60
+
+
+@dataclass
+class RecoveredLiveCards:
+    run_id: str
+    floor: int | None
+    offered_cards: list[str]
+    created_at: datetime
+
+
+_RECOVERED_LIVE_CARDS: RecoveredLiveCards | None = None
 
 
 @dataclass
@@ -18,6 +33,46 @@ class LiveContextResult:
     floor: int | None
     offered_cards: list[str]
     picked_card: str | None
+
+
+def save_recovered_live_cards(
+    *, run_id: str, floor: int | None, offered_cards: list[str]
+) -> None:
+    global _RECOVERED_LIVE_CARDS
+    _RECOVERED_LIVE_CARDS = RecoveredLiveCards(
+        run_id=run_id,
+        floor=floor,
+        offered_cards=list(offered_cards),
+        created_at=datetime.now(UTC),
+    )
+
+
+def clear_recovered_live_cards() -> None:
+    global _RECOVERED_LIVE_CARDS
+    _RECOVERED_LIVE_CARDS = None
+
+
+def _load_recovered_live_cards(*, run_id: str, floor: int | None) -> list[str] | None:
+    global _RECOVERED_LIVE_CARDS
+    if _RECOVERED_LIVE_CARDS is None:
+        return None
+
+    now = datetime.now(UTC)
+    expires_at = _RECOVERED_LIVE_CARDS.created_at + timedelta(
+        seconds=_RECOVERED_CARDS_TTL_SECONDS
+    )
+    if now >= expires_at:
+        _RECOVERED_LIVE_CARDS = None
+        return None
+
+    if _RECOVERED_LIVE_CARDS.run_id != run_id:
+        return None
+    if _RECOVERED_LIVE_CARDS.floor != floor:
+        return None
+    if not _RECOVERED_LIVE_CARDS.offered_cards:
+        return None
+
+    return list(_RECOVERED_LIVE_CARDS.offered_cards)
 
 
 def _parse_int(value: Any) -> int | None:
@@ -169,6 +224,11 @@ def get_live_context(session: Session) -> LiveContextResult:
         if card_choice
         else None,
     )
+
+    if not offered_cards:
+        recovered_offered_cards = _load_recovered_live_cards(run_id=run.id, floor=floor)
+        if recovered_offered_cards:
+            offered_cards = recovered_offered_cards
 
     return LiveContextResult(
         available=True,

@@ -85,6 +85,14 @@ export interface LiveContext {
   picked_card: string | null
 }
 
+export interface LiveRecoverCardsResponse {
+  success: boolean
+  offered_cards: string[]
+  source: 'save' | 'llm_vision' | 'live_unavailable'
+  llm_model: string | null
+  llm_error: string | null
+}
+
 export interface RunListItem {
   run_id: string
   seed: string | null

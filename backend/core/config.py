@@ -20,7 +20,8 @@ class Settings:
     llm_enabled: bool
     llm_provider: str
     llm_base_url: str
-    llm_model: str
+    llm_recommendation_model: str
+    llm_vision_model: str
     llm_timeout_ms: int
 
 
@@ -133,7 +134,28 @@ def get_settings() -> Settings:
     llm_provider = llm_data.get("provider") if isinstance(llm_data, dict) else None
     llm_base_url = llm_data.get("base_url") if isinstance(llm_data, dict) else None
     llm_model = llm_data.get("model") if isinstance(llm_data, dict) else None
+    llm_recommendation_model = (
+        llm_data.get("recommendation_model") if isinstance(llm_data, dict) else None
+    )
+    llm_vision_model = (
+        llm_data.get("vision_model") if isinstance(llm_data, dict) else None
+    )
     llm_timeout_ms = llm_data.get("timeout_ms") if isinstance(llm_data, dict) else None
+
+    normalized_legacy_model = (
+        llm_model.strip() if isinstance(llm_model, str) and llm_model.strip() else None
+    )
+    normalized_recommendation_model = (
+        llm_recommendation_model.strip()
+        if isinstance(llm_recommendation_model, str)
+        and llm_recommendation_model.strip()
+        else None
+    )
+    normalized_vision_model = (
+        llm_vision_model.strip()
+        if isinstance(llm_vision_model, str) and llm_vision_model.strip()
+        else None
+    )
 
     return Settings(
         db_path=db_path,
@@ -162,10 +184,13 @@ def get_settings() -> Settings:
             if isinstance(llm_base_url, str) and llm_base_url.strip()
             else "http://127.0.0.1:11434"
         ),
-        llm_model=(
-            llm_model.strip()
-            if isinstance(llm_model, str) and llm_model.strip()
-            else "gemma3:latest"
+        llm_recommendation_model=(
+            normalized_recommendation_model
+            or normalized_legacy_model
+            or "gemma3:latest"
+        ),
+        llm_vision_model=(
+            normalized_vision_model or normalized_legacy_model or "gemma3:latest"
         ),
         llm_timeout_ms=(
             max(int(float(llm_timeout_ms)), 1)

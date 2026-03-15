@@ -3,6 +3,7 @@ import type {
   HealthStatus,
   IngestStatus,
   LiveContext,
+  LiveRecoverCardsResponse,
   Recommendation,
   RecommendationContext,
   RunCharacters,
@@ -60,6 +61,18 @@ export function fetchCardInsights(cards: string[]): Promise<CardInsights> {
 
 export function fetchLiveContext(): Promise<LiveContext> {
   return fetchJson<LiveContext>('/live/context')
+}
+
+export async function recoverLiveCards(imageBase64: string): Promise<LiveRecoverCardsResponse> {
+  const response = await fetch(`${API_BASE}/live/recover-cards`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image_base64: imageBase64 }),
+  })
+  if (!response.ok) {
+    throw new Error(`API error ${response.status}`)
+  }
+  return (await response.json()) as LiveRecoverCardsResponse
 }
 
 export interface RunsQuery {

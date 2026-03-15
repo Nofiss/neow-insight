@@ -15,5 +15,6 @@ debounce_seconds = 0.4
 enabled = false
 provider = "ollama"
 base_url = "http://127.0.0.1:11434"
-model = "gemma3:latest"
+recommendation_model = "gemma3:latest"
+vision_model = "gemma3:latest"
 timeout_ms = 1500

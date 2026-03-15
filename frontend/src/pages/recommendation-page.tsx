@@ -3,6 +3,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { recoverLiveCards } from '@/features/recommendation/api'
 import {
   DEFAULT_OFFERED,
   useCardInsights,
@@ -22,6 +23,8 @@ export function RecommendationPage() {
   const [characterInput, setCharacterInput] = useState(DEFAULT_CHARACTER)
   const [ascensionInput, setAscensionInput] = useState(DEFAULT_ASCENSION)
   const [floorInput, setFloorInput] = useState(DEFAULT_FLOOR)
+  const [isRecoveringCards, setIsRecoveringCards] = useState(false)
+  const [recoverCardsError, setRecoverCardsError] = useState<string | null>(null)
 
   const offeredCards = useMemo(() => parseCardsInput(cardsInput), [cardsInput])
   const manualRecommendationContext = useMemo(
@@ -83,6 +86,72 @@ export function RecommendationPage() {
   const recommendationReason = recommendation.data?.reason
   const reasonLabel = REASON_LABELS[recommendationReason ?? 'ok_global']
 
+  const recoverCardsFromScreenshot = async () => {
+    if (isRecoveringCards) {
+      return
+    }
+    setRecoverCardsError(null)
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setRecoverCardsError('Screen Capture API non supportata dal browser.')
+      return
+    }
+
+    setIsRecoveringCards(true)
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30 } },
+        audio: false,
+      })
+      const track = stream.getVideoTracks()[0]
+      if (!track) {
+        throw new Error('Nessun video track disponibile per lo screenshot.')
+      }
+
+      const video = document.createElement('video')
+      video.srcObject = stream
+      video.muted = true
+      video.playsInline = true
+      await video.play()
+
+      const width = video.videoWidth || 1920
+      const height = video.videoHeight || 1080
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const context = canvas.getContext('2d')
+      if (!context) {
+        throw new Error('Canvas 2D context non disponibile.')
+      }
+      context.drawImage(video, 0, 0, width, height)
+
+      track.stop()
+      stream.getTracks().forEach((item) => item.stop())
+
+      const dataUrl = canvas.toDataURL('image/png')
+      const imageBase64 = dataUrl.split(',')[1] ?? ''
+      if (!imageBase64) {
+        throw new Error('Screenshot vuoto.')
+      }
+
+      const result = await recoverLiveCards(imageBase64)
+      if (!result.success) {
+        setRecoverCardsError(result.llm_error ?? 'Impossibile estrarre le carte dallo screenshot.')
+        return
+      }
+
+      await Promise.all([
+        liveContext.refetch?.(),
+        recommendation.refetch?.(),
+        cardInsights.refetch?.(),
+      ])
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Errore durante recupero carte.'
+      setRecoverCardsError(message)
+    } finally {
+      setIsRecoveringCards(false)
+    }
+  }
+
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6 lg:py-10">
       <section className="rounded-2xl border border-zinc-300/80 bg-gradient-to-r from-sky-50 via-cyan-50 to-teal-50 p-6 shadow-sm">
@@ -125,6 +194,31 @@ export function RecommendationPage() {
                 le include, il flusso torna live automaticamente.
               </AlertDescription>
             </Alert>
+          ) : null}
+
+          {liveAvailableWithoutCards ? (
+            <div className="rounded-lg border border-sky-200 bg-sky-50/70 p-4">
+              <p className="text-sm font-medium text-sky-900">Recupero automatico da screenshot</p>
+              <p className="mt-1 text-xs text-sky-700">
+                Seleziona la finestra di gioco: il backend usera l&apos;LLM per estrarre le carte e
+                riattivare il flusso live (analytics + LLM).
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  className="rounded-md border border-sky-500 bg-sky-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => {
+                    void recoverCardsFromScreenshot()
+                  }}
+                  disabled={isRecoveringCards}
+                >
+                  {isRecoveringCards ? 'Recupero in corso...' : 'Recupera carte da screenshot'}
+                </button>
+                {recoverCardsError ? (
+                  <p className="text-xs text-rose-700">Errore recover: {recoverCardsError}</p>
+                ) : null}
+              </div>
+            </div>
           ) : null}
 
           <div className="rounded-lg border border-zinc-300 bg-zinc-50 p-4">

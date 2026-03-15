@@ -79,6 +79,18 @@ class LiveContextResponse(BaseModel):
     picked_card: str | None
 
 
+class LiveRecoverCardsRequest(BaseModel):
+    image_base64: str
+
+
+class LiveRecoverCardsResponse(BaseModel):
+    success: bool
+    offered_cards: list[str]
+    source: str
+    llm_model: str | None = None
+    llm_error: str | None = None
+
+
 class RunCardChoiceResponse(BaseModel):
     floor: int
     offered_cards: list[str]
