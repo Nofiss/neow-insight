@@ -28,6 +28,14 @@ class RecommendationResponse(BaseModel):
     scope: str
     applied_filters: list[str]
     fallback_used: bool
+    llm_pick: str | None = None
+    llm_rationale: str | None = None
+    llm_strategy_tags: list[str] = []
+    llm_confidence: float | None = None
+    llm_model: str | None = None
+    llm_used: bool = False
+    llm_error: str | None = None
+    source: str = "statistical"
 
 
 class CardInsightResponse(BaseModel):

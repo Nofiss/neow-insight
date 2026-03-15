@@ -5,8 +5,15 @@ log_level = "INFO"
 
 [storage]
 db_path = "data/neow_insight.db"
-saves_path = "C:/Users/<utente>/AppData/Roaming/SlayTheSpire2/steam/76561198110552884/profile1/saves"
+saves_path = "C:/Users/berna/AppData/Roaming/SlayTheSpire2/steam/76561198110552884/profile1/saves"
 
 [watcher]
 enabled = true
 debounce_seconds = 0.4
+
+[llm]
+enabled = false
+provider = "ollama"
+base_url = "http://127.0.0.1:11434"
+model = "gemma3:latest"
+timeout_ms = 1500

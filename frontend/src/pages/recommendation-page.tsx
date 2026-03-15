@@ -22,7 +22,6 @@ export function RecommendationPage() {
   const [characterInput, setCharacterInput] = useState(DEFAULT_CHARACTER)
   const [ascensionInput, setAscensionInput] = useState(DEFAULT_ASCENSION)
   const [floorInput, setFloorInput] = useState(DEFAULT_FLOOR)
-  const [useLiveInput, setUseLiveInput] = useState(true)
 
   const offeredCards = useMemo(() => parseCardsInput(cardsInput), [cardsInput])
   const manualRecommendationContext = useMemo(
@@ -41,7 +40,7 @@ export function RecommendationPage() {
   const liveIsUsable = Boolean(liveContext.data?.available && liveCards.length > 0)
 
   useEffect(() => {
-    if (useLiveInput && liveIsUsable) {
+    if (liveIsUsable) {
       return
     }
     if (availableCharacters.length === 0) {
@@ -52,17 +51,17 @@ export function RecommendationPage() {
     }
     const ironcladCharacter = availableCharacters.find((character) => character === 'IRONCLAD')
     setCharacterInput(ironcladCharacter ?? availableCharacters[0])
-  }, [availableCharacters, characterInput, liveIsUsable, useLiveInput])
+  }, [availableCharacters, characterInput, liveIsUsable])
 
   const activeCards = useMemo(() => {
-    if (useLiveInput && liveIsUsable) {
+    if (liveIsUsable) {
       return liveCards
     }
     return offeredCards
-  }, [liveCards, liveIsUsable, offeredCards, useLiveInput])
+  }, [liveCards, liveIsUsable, offeredCards])
 
   const activeRecommendationContext = useMemo(() => {
-    if (useLiveInput && liveIsUsable) {
+    if (liveIsUsable) {
       return {
         character: liveContext.data?.character?.trim().toUpperCase() ?? '',
         ascension: Math.max(0, Math.floor(liveContext.data?.ascension ?? 0)),
@@ -70,12 +69,12 @@ export function RecommendationPage() {
       }
     }
     return manualRecommendationContext
-  }, [liveContext.data, liveIsUsable, manualRecommendationContext, useLiveInput])
+  }, [liveContext.data, liveIsUsable, manualRecommendationContext])
 
   const recommendation = useRecommendation(activeCards, activeRecommendationContext)
   const cardInsights = useCardInsights(activeCards)
   const ingestStatus = useIngestStatus()
-  const recommendationSource = useLiveInput && liveIsUsable ? 'live' : 'manuale'
+  const recommendationSource = liveIsUsable ? 'live' : 'fallback'
   const liveRunId = liveContext.data?.run_id
   const liveCharacter = liveContext.data?.character
   const liveAscension = liveContext.data?.ascension
@@ -90,38 +89,28 @@ export function RecommendationPage() {
           Recommendation
         </h2>
         <p className="mt-2 max-w-2xl text-sm text-zinc-600 sm:text-base">
-          Input live o manuale, best pick e confronto completo delle carte offerte.
+          Flusso live-first da current run con best pick statistica e proposta LLM affiancata.
         </p>
       </section>
 
       <Card className="border-zinc-300/90 bg-zinc-50/70">
         <CardHeader>
-          <CardDescription>Carte offerte (input dinamico)</CardDescription>
+          <CardDescription>Carte offerte dalla run live corrente</CardDescription>
           <CardTitle>Raccomandazione corrente</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-3 rounded-md border border-zinc-300 bg-white px-3 py-2">
-            <div>
-              <p className="text-sm font-medium text-zinc-800">Usa contesto live</p>
-              <p className="text-xs text-zinc-500">
-                Quando attivo, carte e contesto arrivano da `GET /live/context`.
-              </p>
-            </div>
-            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-zinc-700">
-              <input
-                type="checkbox"
-                checked={useLiveInput}
-                onChange={(event) => setUseLiveInput(event.target.checked)}
-              />
-              {useLiveInput ? 'live' : 'manuale'}
-            </label>
+          <div className="rounded-md border border-zinc-300 bg-white px-3 py-2">
+            <p className="text-sm font-medium text-zinc-800">Contesto attivo</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Modalita live-first: carte e contesto arrivano da `GET /live/context`.
+            </p>
           </div>
 
-          {useLiveInput && !liveIsUsable ? (
+          {!liveIsUsable ? (
             <Alert className="border-amber-300 bg-amber-50/80">
               <AlertTitle>Live non disponibile</AlertTitle>
               <AlertDescription>
-                Nessuna scelta carta trovata nel DB: usa temporaneamente l'override manuale.
+                Nessuna scelta carta trovata nel DB: viene usato fallback locale temporaneo.
               </AlertDescription>
             </Alert>
           ) : null}
@@ -161,7 +150,7 @@ export function RecommendationPage() {
                   className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
                   value={characterInput}
                   onChange={(event) => setCharacterInput(event.target.value)}
-                  disabled={useLiveInput && liveIsUsable}
+                  disabled={liveIsUsable}
                 >
                   {availableCharacters.map((character) => (
                     <option key={character} value={character}>
@@ -177,7 +166,7 @@ export function RecommendationPage() {
                   placeholder="IRONCLAD"
                   value={characterInput}
                   onChange={(event) => setCharacterInput(event.target.value)}
-                  disabled={useLiveInput && liveIsUsable}
+                  disabled={liveIsUsable}
                 />
               )}
             </div>
@@ -195,7 +184,7 @@ export function RecommendationPage() {
                 className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
                 value={ascensionInput}
                 onChange={(event) => setAscensionInput(Number(event.target.value || 0))}
-                disabled={useLiveInput && liveIsUsable}
+                disabled={liveIsUsable}
               />
             </div>
             <div className="space-y-2">
@@ -212,7 +201,7 @@ export function RecommendationPage() {
                 className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-xs outline-none transition focus:border-zinc-500"
                 value={floorInput}
                 onChange={(event) => setFloorInput(Number(event.target.value || 0))}
-                disabled={useLiveInput && liveIsUsable}
+                disabled={liveIsUsable}
               />
             </div>
           </div>
@@ -231,7 +220,7 @@ export function RecommendationPage() {
               placeholder="CARD.BASH, CARD.CLOTHESLINE, CARD.OFF_BALANCE"
               value={cardsInput}
               onChange={(event) => setCardsInput(event.target.value)}
-              disabled={useLiveInput && liveIsUsable}
+              disabled={liveIsUsable}
             />
           </div>
 
@@ -274,6 +263,9 @@ export function RecommendationPage() {
                   </Badge>
                 ) : null}
                 <Badge className="border-zinc-300 bg-zinc-100 text-zinc-800">
+                  mode {recommendation.data?.source ?? 'statistical'}
+                </Badge>
+                <Badge className="border-zinc-300 bg-zinc-100 text-zinc-800">
                   sample {recommendation.data?.sample_size ?? 0}
                 </Badge>
                 <Badge className="border-zinc-300 bg-zinc-100 text-zinc-800">
@@ -313,6 +305,46 @@ export function RecommendationPage() {
                   ? recommendation.data.applied_filters.join(', ')
                   : 'nessuno'}
               </p>
+              <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
+                <p className="text-xs font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+                  Proposta LLM (affiancata)
+                </p>
+                <p className="mt-1 text-sm text-zinc-800">
+                  Pick:{' '}
+                  <span className="font-medium">{recommendation.data?.llm_pick ?? 'N/A'}</span>
+                </p>
+                <p className="mt-1 text-xs text-zinc-600">
+                  {recommendation.data?.llm_rationale ??
+                    'LLM non disponibile: fallback statistico.'}
+                </p>
+                {recommendation.data?.llm_strategy_tags.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {recommendation.data.llm_strategy_tags.map((tag) => (
+                      <Badge key={tag} className="border-zinc-300 bg-white text-zinc-700">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Badge className="border-zinc-300 bg-white text-zinc-700">
+                    used {recommendation.data?.llm_used ? 'yes' : 'no'}
+                  </Badge>
+                  <Badge className="border-zinc-300 bg-white text-zinc-700">
+                    model {recommendation.data?.llm_model ?? 'N/A'}
+                  </Badge>
+                  {typeof recommendation.data?.llm_confidence === 'number' ? (
+                    <Badge className="border-zinc-300 bg-white text-zinc-700">
+                      conf {asPercent(recommendation.data.llm_confidence)}
+                    </Badge>
+                  ) : null}
+                  {recommendation.data?.llm_error ? (
+                    <Badge className="border-amber-300 bg-amber-100 text-amber-800">
+                      err {recommendation.data.llm_error}
+                    </Badge>
+                  ) : null}
+                </div>
+              </div>
             </div>
           )}
 

@@ -17,6 +17,11 @@ class Settings:
     api_port: int
     enable_watcher: bool
     watcher_debounce_seconds: float
+    llm_enabled: bool
+    llm_provider: str
+    llm_base_url: str
+    llm_model: str
+    llm_timeout_ms: int
 
 
 def _default_saves_path() -> Path:
@@ -98,6 +103,7 @@ def get_settings() -> Settings:
     api_data = file_data.get("api", {}) if isinstance(file_data, dict) else {}
     storage_data = file_data.get("storage", {}) if isinstance(file_data, dict) else {}
     watcher_data = file_data.get("watcher", {}) if isinstance(file_data, dict) else {}
+    llm_data = file_data.get("llm", {}) if isinstance(file_data, dict) else {}
 
     default_db_path = workspace_root / "data" / "neow_insight.db"
     default_saves_path = _default_saves_path()
@@ -123,6 +129,11 @@ def get_settings() -> Settings:
     watcher_debounce_seconds = (
         watcher_data.get("debounce_seconds") if isinstance(watcher_data, dict) else None
     )
+    llm_enabled = llm_data.get("enabled") if isinstance(llm_data, dict) else None
+    llm_provider = llm_data.get("provider") if isinstance(llm_data, dict) else None
+    llm_base_url = llm_data.get("base_url") if isinstance(llm_data, dict) else None
+    llm_model = llm_data.get("model") if isinstance(llm_data, dict) else None
+    llm_timeout_ms = llm_data.get("timeout_ms") if isinstance(llm_data, dict) else None
 
     return Settings(
         db_path=db_path,
@@ -139,5 +150,26 @@ def get_settings() -> Settings:
             float(watcher_debounce_seconds)
             if isinstance(watcher_debounce_seconds, int | float | str)
             else 0.4
+        ),
+        llm_enabled=bool(llm_enabled) if isinstance(llm_enabled, bool) else False,
+        llm_provider=(
+            llm_provider.strip().lower()
+            if isinstance(llm_provider, str) and llm_provider.strip()
+            else "ollama"
+        ),
+        llm_base_url=(
+            llm_base_url.strip()
+            if isinstance(llm_base_url, str) and llm_base_url.strip()
+            else "http://127.0.0.1:11434"
+        ),
+        llm_model=(
+            llm_model.strip()
+            if isinstance(llm_model, str) and llm_model.strip()
+            else "gemma3:latest"
+        ),
+        llm_timeout_ms=(
+            max(int(float(llm_timeout_ms)), 1)
+            if isinstance(llm_timeout_ms, int | float | str)
+            else 1500
         ),
     )

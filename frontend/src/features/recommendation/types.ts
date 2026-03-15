@@ -16,6 +16,14 @@ export interface Recommendation {
   scope: 'character_ascension_floor' | 'character_ascension' | 'character' | 'ascension' | 'global'
   applied_filters: string[]
   fallback_used: boolean
+  llm_pick: string | null
+  llm_rationale: string | null
+  llm_strategy_tags: string[]
+  llm_confidence: number | null
+  llm_model: string | null
+  llm_used: boolean
+  llm_error: string | null
+  source: 'statistical' | 'hybrid' | 'hybrid_fallback'
 }
 
 export interface RecommendationContext {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from dataclasses import replace
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
@@ -9,6 +10,15 @@ from api.main import app
 from api.state import ingest_status
 from core.db import get_session
 from core.db.models import CardChoice, Run
+
+
+def _recommendation_base_url(
+    cards: str, character: str, ascension: int, floor: int
+) -> str:
+    return (
+        f"/recommendation?cards={cards}"
+        f"&character={character}&ascension={ascension}&floor={floor}"
+    )
 
 
 @pytest.fixture
@@ -126,6 +136,9 @@ def test_recommendation_endpoint_selects_best_pick(client_and_engine):
     assert payload["scope"] == "global"
     assert payload["applied_filters"] == []
     assert payload["fallback_used"] is False
+    assert payload["llm_pick"] is None
+    assert payload["llm_used"] is False
+    assert payload["source"] == "statistical"
 
 
 def test_recommendation_endpoint_no_history_reason(client_and_engine):
@@ -142,6 +155,9 @@ def test_recommendation_endpoint_no_history_reason(client_and_engine):
     assert payload["scope"] == "global"
     assert payload["applied_filters"] == []
     assert payload["fallback_used"] is False
+    assert payload["llm_pick"] is None
+    assert payload["llm_used"] is False
+    assert payload["source"] == "statistical"
 
 
 def test_ingest_status_endpoint_defaults_to_zero(client_and_engine):
@@ -513,6 +529,51 @@ def test_recommendation_endpoint_falls_back_to_global_when_context_missing(
     assert payload["scope"] == "global"
     assert payload["fallback_used"] is True
     assert payload["reason"] == "fallback_global_no_context"
+
+
+def test_recommendation_endpoint_live_hybrid_llm_disabled_sets_fallback_fields(
+    client_and_engine,
+    monkeypatch,
+):
+    from api.routers import recommendation as recommendation_router
+
+    monkeypatch.setattr(
+        recommendation_router,
+        "settings",
+        replace(recommendation_router.settings, llm_enabled=False),
+    )
+
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-live-llm-off",
+                character="IRONCLAD",
+                ascension=5,
+                win=False,
+                imported_at="2026-03-15T10:00:00Z",
+                raw_payload={"run_id": "run-live-llm-off", "floor_reached": 9},
+            )
+        )
+        session.add(
+            CardChoice(
+                run_id="run-live-llm-off",
+                floor=9,
+                offered_cards=["CARD.A", "CARD.B"],
+                picked_card="CARD.A",
+                is_shop=False,
+            )
+        )
+        session.commit()
+
+    response = client.get(_recommendation_base_url("CARD.A,CARD.B", "IRONCLAD", 5, 9))
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "hybrid_fallback"
+    assert payload["llm_used"] is False
+    assert payload["llm_pick"] is None
+    assert payload["llm_error"] == "llm_disabled"
 
 
 def test_live_context_endpoint_returns_unavailable_when_no_card_choices(

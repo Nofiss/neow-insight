@@ -18,7 +18,17 @@ describe('fetchRecommendation', () => {
   it('builds recommendation query with full contextual params', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ best_pick: 'CARD.BASH' }),
+      json: async () => ({
+        best_pick: 'CARD.BASH',
+        llm_pick: 'CARD.CLOTHESLINE',
+        llm_rationale: 'Mantiene pressione offensiva.',
+        llm_strategy_tags: ['damage', 'tempo'],
+        llm_confidence: 0.72,
+        llm_model: 'gemma3:latest',
+        llm_used: true,
+        llm_error: null,
+        source: 'hybrid',
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -37,7 +47,17 @@ describe('fetchRecommendation', () => {
   it('omits empty contextual params', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ best_pick: 'CARD.BASH' }),
+      json: async () => ({
+        best_pick: 'CARD.BASH',
+        llm_pick: null,
+        llm_rationale: null,
+        llm_strategy_tags: [],
+        llm_confidence: null,
+        llm_model: null,
+        llm_used: false,
+        llm_error: null,
+        source: 'statistical',
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
 

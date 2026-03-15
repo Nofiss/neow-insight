@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.config import _resolve_storage_paths
+import core.config as config_module
+from core.config import _resolve_storage_paths, get_settings
 
 
 def test_resolve_storage_paths_uses_saves_path_when_provided(tmp_path: Path):
@@ -51,3 +52,54 @@ def test_resolve_storage_paths_defaults_to_default_saves(tmp_path: Path):
     assert resolved_saves == default_saves
     assert resolved_history == default_saves / "history"
     assert resolved_current == default_saves / "current_run.save"
+
+
+def test_get_settings_defaults_llm_values(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    backend = workspace / "backend"
+    core = backend / "core"
+    core.mkdir(parents=True)
+    (core / "config.py").write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(config_module, "__file__", str(core / "config.py"))
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    assert settings.llm_enabled is False
+    assert settings.llm_provider == "ollama"
+    assert settings.llm_base_url == "http://127.0.0.1:11434"
+    assert settings.llm_model == "gemma3:latest"
+    assert settings.llm_timeout_ms == 1500
+    get_settings.cache_clear()
+
+
+def test_get_settings_reads_llm_values_from_file(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    backend = workspace / "backend"
+    core = backend / "core"
+    core.mkdir(parents=True)
+    (core / "config.py").write_text("", encoding="utf-8")
+    (workspace / "settings.toml").write_text(
+        "\n".join(
+            [
+                "[llm]",
+                "enabled = true",
+                'provider = "ollama"',
+                'base_url = "http://localhost:11434"',
+                'model = "llama3.1:8b"',
+                "timeout_ms = 2200",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(config_module, "__file__", str(core / "config.py"))
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    assert settings.llm_enabled is True
+    assert settings.llm_provider == "ollama"
+    assert settings.llm_base_url == "http://localhost:11434"
+    assert settings.llm_model == "llama3.1:8b"
+    assert settings.llm_timeout_ms == 2200
+    get_settings.cache_clear()
