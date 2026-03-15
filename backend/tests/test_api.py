@@ -596,6 +596,72 @@ def test_live_context_endpoint_returns_most_recent_imported_run(client_and_engin
     assert payload["picked_card"] == "CARD.D"
 
 
+def test_live_context_endpoint_exposes_run_context_without_card_choices(
+    client_and_engine,
+):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-live-no-cards",
+                character="CHARACTER.IRONCLAD",
+                ascension=15,
+                win=False,
+                imported_at="2026-03-15T00:00:00Z",
+                raw_payload={"run_id": "run-live-no-cards", "floor_reached": 23},
+            )
+        )
+        session.commit()
+
+    response = client.get("/live/context")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["run_id"] == "run-live-no-cards"
+    assert payload["character"] == "CHARACTER.IRONCLAD"
+    assert payload["ascension"] == 15
+    assert payload["floor"] == 23
+    assert payload["offered_cards"] == []
+    assert payload["picked_card"] is None
+
+
+def test_live_context_endpoint_uses_sts2_floor_when_floor_reached_missing(
+    client_and_engine,
+):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-live-sts2",
+                character="CHARACTER.NECROBINDER",
+                ascension=2,
+                win=False,
+                imported_at="2026-03-15T01:00:00Z",
+                raw_payload={
+                    "run_id": "run-live-sts2",
+                    "map_point_history": [
+                        [{"map_point_type": "monster"}, {"map_point_type": "shop"}],
+                        [{"map_point_type": "event"}],
+                    ],
+                },
+            )
+        )
+        session.commit()
+
+    response = client.get("/live/context")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["run_id"] == "run-live-sts2"
+    assert payload["character"] == "CHARACTER.NECROBINDER"
+    assert payload["ascension"] == 2
+    assert payload["floor"] == 3
+    assert payload["offered_cards"] == []
+    assert payload["picked_card"] is None
+
+
 def test_live_context_endpoint_tiebreaks_with_run_id_when_recency_is_equal(
     client_and_engine,
 ):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import desc
 from sqlmodel import Session, col, func, select
@@ -19,18 +20,51 @@ class LiveContextResult:
     picked_card: str | None
 
 
+def _parse_int(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _count_map_points(payload: Any) -> int:
+    if not isinstance(payload, list):
+        return 0
+
+    floor = 0
+    for act in payload:
+        if not isinstance(act, list):
+            continue
+        for map_point in act:
+            if not isinstance(map_point, dict):
+                continue
+            floor += 1
+    return floor
+
+
+def _resolve_live_floor(
+    raw_payload: dict[str, Any], fallback_floor: int | None
+) -> int | None:
+    floor_reached = _parse_int(raw_payload.get("floor_reached"))
+    if floor_reached is not None:
+        return floor_reached
+
+    map_points_floor = _count_map_points(raw_payload.get("map_point_history"))
+    if map_points_floor > 0:
+        return map_points_floor
+
+    return fallback_floor
+
+
 def get_live_context(session: Session) -> LiveContextResult:
     run_recency = func.coalesce(
         func.nullif(col(Run.imported_at), ""),
         func.nullif(col(Run.raw_timestamp), ""),
         "1970-01-01T00:00:00Z",
     )
-    run_ids_with_choices = select(col(CardChoice.run_id)).distinct()
     run = session.exec(
-        select(Run)
-        .where(col(Run.id).in_(run_ids_with_choices))
-        .order_by(desc(run_recency), desc(col(Run.id)))
-        .limit(1)
+        select(Run).order_by(desc(run_recency), desc(col(Run.id))).limit(1)
     ).first()
     if run is None:
         return LiveContextResult(
@@ -49,23 +83,16 @@ def get_live_context(session: Session) -> LiveContextResult:
         .order_by(col(CardChoice.floor).desc(), col(CardChoice.id).desc())
         .limit(1)
     ).first()
-    if card_choice is None:
-        return LiveContextResult(
-            available=False,
-            run_id=None,
-            character=None,
-            ascension=None,
-            floor=None,
-            offered_cards=[],
-            picked_card=None,
-        )
+    floor = _resolve_live_floor(
+        run.raw_payload or {}, card_choice.floor if card_choice else None
+    )
 
     return LiveContextResult(
         available=True,
         run_id=run.id,
         character=run.character,
         ascension=run.ascension,
-        floor=card_choice.floor,
-        offered_cards=list(card_choice.offered_cards),
-        picked_card=card_choice.picked_card,
+        floor=floor,
+        offered_cards=list(card_choice.offered_cards) if card_choice else [],
+        picked_card=card_choice.picked_card if card_choice else None,
     )
