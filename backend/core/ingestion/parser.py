@@ -92,6 +92,10 @@ def _parse_character(payload: dict[str, Any]) -> str | None:
     character = first_player.get("character")
     if isinstance(character, str) and character.strip():
         return character.strip()
+
+    character_id = first_player.get("character_id")
+    if isinstance(character_id, str) and character_id.strip():
+        return character_id.strip()
     return None
 
 

@@ -38,7 +38,7 @@ export function useRecommendation(offered = DEFAULT_OFFERED, context?: Recommend
   return useQuery({
     queryKey: ['recommendation', offered, context ?? null],
     queryFn: () => fetchRecommendation(offered, context),
-    refetchInterval: 7000,
+    refetchInterval: 2000,
     enabled: offered.length > 0,
   })
 }
@@ -55,7 +55,7 @@ export function useCardInsights(offered = DEFAULT_OFFERED) {
   return useQuery({
     queryKey: ['card-insights', offered],
     queryFn: () => fetchCardInsights(offered),
-    refetchInterval: 7000,
+    refetchInterval: 4000,
     enabled: offered.length > 0,
   })
 }
@@ -64,7 +64,7 @@ export function useLiveContext() {
   return useQuery({
     queryKey: ['live-context'],
     queryFn: fetchLiveContext,
-    refetchInterval: 3000,
+    refetchInterval: 1000,
   })
 }
 

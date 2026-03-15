@@ -75,6 +75,7 @@ export function RecommendationPage() {
   const cardInsights = useCardInsights(activeCards)
   const ingestStatus = useIngestStatus()
   const recommendationSource = liveIsUsable ? 'live' : 'fallback'
+  const liveAvailableWithoutCards = Boolean(liveContext.data?.available && liveCards.length === 0)
   const liveRunId = liveContext.data?.run_id
   const liveCharacter = liveContext.data?.character
   const liveAscension = liveContext.data?.ascension
@@ -111,6 +112,17 @@ export function RecommendationPage() {
               <AlertTitle>Live non disponibile</AlertTitle>
               <AlertDescription>
                 Nessuna scelta carta trovata nel DB: viene usato fallback locale temporaneo.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {liveAvailableWithoutCards ? (
+            <Alert className="border-sky-300 bg-sky-50/80">
+              <AlertTitle>Run live connessa, reward carte non ancora nel save</AlertTitle>
+              <AlertDescription>
+                Il backend vede la run corrente ma il file `current_run.save` non espone ancora le
+                carte offerte. Inserisci temporaneamente le carte a mano qui sotto: appena il save
+                le include, il flusso torna live automaticamente.
               </AlertDescription>
             </Alert>
           ) : null}

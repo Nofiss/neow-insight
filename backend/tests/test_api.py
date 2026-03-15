@@ -35,20 +35,8 @@ def client_and_engine():
             yield session
 
     app.dependency_overrides[get_session] = override_get_session
-    ingest_status.scanned = 0
-    ingest_status.imported = 0
-    ingest_status.updated = 0
-    ingest_status.parse_errors = 0
-    ingest_status.skipped = 0
-    ingest_status.recent_issues = []
-    ingest_status.last_processed_run_id = None
-    ingest_status.last_processed_file = None
-    ingest_status.last_event_at = None
-    try:
-        with TestClient(app) as client:
-            yield client, engine
-    finally:
-        app.dependency_overrides.clear()
+
+    def reset_ingest_status() -> None:
         ingest_status.scanned = 0
         ingest_status.imported = 0
         ingest_status.updated = 0
@@ -58,6 +46,15 @@ def client_and_engine():
         ingest_status.last_processed_run_id = None
         ingest_status.last_processed_file = None
         ingest_status.last_event_at = None
+
+    reset_ingest_status()
+    try:
+        with TestClient(app) as client:
+            reset_ingest_status()
+            yield client, engine
+    finally:
+        app.dependency_overrides.clear()
+        reset_ingest_status()
 
 
 def test_health_endpoint(client_and_engine):
@@ -720,6 +717,68 @@ def test_live_context_endpoint_uses_sts2_floor_when_floor_reached_missing(
     assert payload["ascension"] == 2
     assert payload["floor"] == 3
     assert payload["offered_cards"] == []
+    assert payload["picked_card"] is None
+
+
+def test_live_context_endpoint_exposes_pending_sts2_card_reward(
+    client_and_engine,
+):
+    client, engine = client_and_engine
+    with Session(engine) as session:
+        session.add(
+            Run(
+                id="run-live-pending-reward",
+                character="CHARACTER.WATCHER",
+                ascension=2,
+                win=False,
+                imported_at="2026-03-15T02:00:00Z",
+                raw_payload={
+                    "run_id": "run-live-pending-reward",
+                    "map_point_history": [
+                        [
+                            {"map_point_type": "monster"},
+                            {
+                                "map_point_type": "monster",
+                                "player_stats": [
+                                    {
+                                        "card_choices": [
+                                            {
+                                                "card": {"id": "CARD.PALE_BLUE_DOT"},
+                                                "was_picked": False,
+                                            },
+                                            {
+                                                "card": {"id": "CARD.BATTLE_LOOT"},
+                                                "was_picked": False,
+                                            },
+                                            {
+                                                "card": {"id": "CARD.TERRAFORM"},
+                                                "was_picked": False,
+                                            },
+                                        ]
+                                    }
+                                ],
+                            },
+                        ]
+                    ],
+                },
+            )
+        )
+        session.commit()
+
+    response = client.get("/live/context")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["run_id"] == "run-live-pending-reward"
+    assert payload["character"] == "CHARACTER.WATCHER"
+    assert payload["ascension"] == 2
+    assert payload["floor"] == 2
+    assert payload["offered_cards"] == [
+        "CARD.PALE_BLUE_DOT",
+        "CARD.BATTLE_LOOT",
+        "CARD.TERRAFORM",
+    ]
     assert payload["picked_card"] is None
 
 

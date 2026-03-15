@@ -154,3 +154,23 @@ def test_parse_run_file_maps_sts2_fields_and_choices(tmp_path):
         "RELIC.STARTER",
         "RELIC.FIRST",
     ]
+
+
+def test_parse_run_file_uses_sts2_character_id_when_character_missing(tmp_path):
+    run_file = tmp_path / "sample-sts2-character-id.run"
+    payload = {
+        "ascension": 1,
+        "win": False,
+        "players": [
+            {
+                "id": 1,
+                "character_id": "CHARACTER.REGENT",
+                "relics": ["RELIC.STARTER"],
+            }
+        ],
+    }
+    run_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    parsed = parse_run_file(run_file)
+
+    assert parsed.character == "CHARACTER.REGENT"

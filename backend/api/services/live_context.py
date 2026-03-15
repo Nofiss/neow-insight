@@ -57,6 +57,64 @@ def _resolve_live_floor(
     return fallback_floor
 
 
+def _extract_live_card_choice_from_raw_payload(
+    raw_payload: dict[str, Any],
+) -> tuple[int | None, list[str], str | None]:
+    history = raw_payload.get("map_point_history")
+    if not isinstance(history, list):
+        return None, [], None
+
+    floor = 0
+    latest_floor: int | None = None
+    latest_offered_cards: list[str] = []
+    latest_picked_card: str | None = None
+
+    for act in history:
+        if not isinstance(act, list):
+            continue
+        for map_point in act:
+            if not isinstance(map_point, dict):
+                continue
+
+            floor += 1
+            player_stats = map_point.get("player_stats")
+            if not isinstance(player_stats, list):
+                continue
+
+            for stats in player_stats:
+                if not isinstance(stats, dict):
+                    continue
+
+                card_choices = stats.get("card_choices")
+                if not isinstance(card_choices, list):
+                    continue
+
+                offered_cards: list[str] = []
+                picked_card: str | None = None
+                for card_choice in card_choices:
+                    if not isinstance(card_choice, dict):
+                        continue
+                    card = card_choice.get("card")
+                    if not isinstance(card, dict):
+                        continue
+                    card_id = card.get("id")
+                    if not isinstance(card_id, str) or not card_id:
+                        continue
+
+                    offered_cards.append(card_id)
+                    if card_choice.get("was_picked") is True:
+                        picked_card = card_id
+
+                if not offered_cards:
+                    continue
+
+                latest_floor = floor
+                latest_offered_cards = offered_cards
+                latest_picked_card = picked_card
+
+    return latest_floor, latest_offered_cards, latest_picked_card
+
+
 def get_live_context(session: Session) -> LiveContextResult:
     run_recency = func.coalesce(
         func.nullif(col(Run.imported_at), ""),
@@ -83,8 +141,33 @@ def get_live_context(session: Session) -> LiveContextResult:
         .order_by(col(CardChoice.floor).desc(), col(CardChoice.id).desc())
         .limit(1)
     ).first()
+
+    raw_choice_floor, raw_offered_cards, raw_picked_card = (
+        _extract_live_card_choice_from_raw_payload(run.raw_payload or {})
+    )
+
+    offered_cards = (
+        raw_offered_cards
+        if raw_offered_cards
+        else list(card_choice.offered_cards)
+        if card_choice
+        else []
+    )
+    picked_card = (
+        raw_picked_card
+        if raw_offered_cards
+        else card_choice.picked_card
+        if card_choice
+        else None
+    )
+
     floor = _resolve_live_floor(
-        run.raw_payload or {}, card_choice.floor if card_choice else None
+        run.raw_payload or {},
+        raw_choice_floor
+        if raw_choice_floor is not None
+        else card_choice.floor
+        if card_choice
+        else None,
     )
 
     return LiveContextResult(
@@ -93,6 +176,6 @@ def get_live_context(session: Session) -> LiveContextResult:
         character=run.character,
         ascension=run.ascension,
         floor=floor,
-        offered_cards=list(card_choice.offered_cards) if card_choice else [],
-        picked_card=card_choice.picked_card if card_choice else None,
+        offered_cards=offered_cards,
+        picked_card=picked_card,
     )
